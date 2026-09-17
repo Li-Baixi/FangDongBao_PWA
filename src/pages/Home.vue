@@ -7,7 +7,15 @@ import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import dayjs from 'dayjs'
 import { useSessionStore } from '@/stores/session'
-import { useDataStore, billView, inScope, dueTodayList, upcomingWithinDays, overdueBills } from '@/stores/data'
+import {
+  useDataStore,
+  billView,
+  inScope,
+  dueTodayList,
+  upcomingWithinDays,
+  overdueBills,
+  overdueUnbilledRent,
+} from '@/stores/data'
 import { formatFen } from '@/utils/money'
 import { today, daysBetween, periodOf } from '@/utils/dates'
 
@@ -19,6 +27,7 @@ const refreshing = ref(false)
 
 const tStr = today()
 const overdue = computed(() => overdueBills(data.bills, data.paidByBill, session, tStr))
+const overdueUnbilled = computed(() => overdueUnbilledRent(data.tenants, data.bills, session, tStr))
 const dueToday = computed(() => dueTodayList(data.tenants, data.bills, data.paidByBill, session, tStr))
 const upcoming = computed(() => upcomingWithinDays(data.tenants, session, 7))
 
@@ -139,6 +148,28 @@ function onUpcomingClick(u) {
         </div>
       </div>
 
+      <!-- 已过收租日、还没建账（漏收预警） -->
+      <div class="fdb-card home__overdue" v-if="overdueUnbilled.length">
+        <div class="fdb-card-title">
+          <span><van-icon name="underway-o" color="#ff8c42" /> 已过收租日，还没抄表建账</span>
+        </div>
+        <div
+          class="home__row home__row--warn"
+          v-for="u in overdueUnbilled.slice(0, 8)"
+          :key="u.tenant.id"
+          @click="goCollect(u.tenant.id)"
+        >
+          <div class="home__row-main">
+            <div>{{ roomLabel(u.tenant) }}{{ u.tenant.name }}</div>
+            <div class="home__row-sub">每月{{ u.tenant.rentDay }}号收租，已过 {{ u.overdueDays }} 天</div>
+          </div>
+          <van-button size="small" type="warning" round style="margin-top: 0">去补收</van-button>
+        </div>
+        <div class="home__more" v-if="overdueUnbilled.length > 8">
+          还有 {{ overdueUnbilled.length - 8 }} 户
+        </div>
+      </div>
+
       <!-- 今日待收 -->
       <div class="fdb-card" v-if="dueToday.length">
         <div class="fdb-card-title">
@@ -172,7 +203,7 @@ function onUpcomingClick(u) {
           <div class="home__row-main">
             <div>{{ roomLabel(u.tenant) }}{{ u.tenant.name }}</div>
           </div>
-          <span v-if="u.inDays === 0" class="home__today-tag">今天收</span>
+          <span v-if="u.inDays === 0" class="home__today-text">今天</span>
           <div v-else class="home__soon">{{ u.inDays === 1 ? '明天' : `${u.inDays} 天后` }}（每月{{ u.tenant.rentDay }}号）</div>
         </div>
       </div>
@@ -240,12 +271,18 @@ function onUpcomingClick(u) {
   gap: 10px;
 }
 .home__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   color: #6b6b6b;
   background: #f2f3f5;
   border-radius: 999px;
   padding: 5px 10px;
   cursor: pointer;
+}
+.home__sync .van-icon {
+  vertical-align: middle;
 }
 .home__viewing {
   font-size: 13px;
@@ -262,8 +299,20 @@ function onUpcomingClick(u) {
   border: 1px solid #ebedf0;
   overflow: hidden;
 }
+/* 去掉 Vant 自带的下拉小箭头（它挤在文字右侧导致视觉偏移），让标题真正居中 */
 .home__dropdown :deep(.van-dropdown-menu__title) {
-  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #323233;
+}
+.home__dropdown :deep(.van-dropdown-menu__title::after) {
+  display: none;
+}
+.home__dropdown :deep(.van-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
 }
 .home__row {
   display: flex;
@@ -307,14 +356,14 @@ function onUpcomingClick(u) {
   padding-left: 8px;
   padding-right: 8px;
 }
-.home__today-tag {
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  background: var(--fdb-primary);
-  border-radius: 999px;
-  padding: 5px 10px;
-  white-space: nowrap;
+/* 今天的标识：纯文字着色（不做胶囊，避免像按钮诱导点击） */
+.home__today-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fdb-primary);
+}
+.home__row--warn {
+  cursor: pointer;
 }
 .home__stat {
   display: flex;

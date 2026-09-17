@@ -72,6 +72,12 @@ function badgeOf(t) {
   if (t.status !== 'active') return null
   if (debtOf(t) > 0) return null
   if (monthSettled(t)) return { text: '本月已收', cls: 'ok' }
+  // 已过本月收租日、当期账单还没建 —— 漏收预警（橙色）
+  const now = dayjs()
+  const todayD = now.date()
+  const rd = Math.min(t.rentDay || 1, now.daysInMonth())
+  const hasBill = data.bills.some((b) => b.tenantId === t.id && b.period === periodOf())
+  if (todayD > rd && !hasBill) return { text: `已过${todayD - rd}天未收`, cls: 'late' }
   const d = rentDaysAway(t)
   if (d === 0) return { text: '今天收租', cls: 'today' }
   if (d === 1) return { text: '明天收租', cls: 'soon' }
@@ -199,6 +205,11 @@ function utilSummary(t) {
 .tenants__badge--soon {
   color: #b26205;
   background: #fff3e0;
+}
+.tenants__badge--late {
+  color: #d54b0a;
+  background: #ffe8d9;
+  font-weight: 600;
 }
 .tenants__badge--ok {
   color: #07c160;

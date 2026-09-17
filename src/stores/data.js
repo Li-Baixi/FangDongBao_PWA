@@ -117,6 +117,28 @@ export function dueTodayList(tenants, bills, paidMap, session, tStr) {
   return out
 }
 
+/**
+ * 已过收租日、当期账单还没建的租客（漏收预警）。
+ * 场景：收租日过了人没去抄表/没建账单 —— "今天该收租"只看当天、
+ * "逾期"只看已建的账单，两头都漏掉的就是这里补上。
+ */
+export function overdueUnbilledRent(tenants, bills, session, tStr) {
+  const now = dayjs(tStr)
+  const todayD = now.date()
+  const thisLen = now.daysInMonth()
+  const period = periodOf(tStr)
+  const out = []
+  for (const t of tenants) {
+    if (!inScope(t, session) || t.status !== 'active') continue
+    const rd = Math.min(t.rentDay || 1, thisLen)
+    if (todayD <= rd) continue // 本月收租日还没到
+    const bill = bills.find((b) => b.tenantId === t.id && b.period === period && !b.deletedAt)
+    if (bill) continue // 已建账：逾期由账单状态提醒
+    out.push({ tenant: t, overdueDays: todayD - rd })
+  }
+  return out.sort((a, b) => b.overdueDays - a.overdueDays)
+}
+
 /** 近 N 天内将到收租日（含今天），用于首页预告 */
 export function upcomingWithinDays(tenants, session, days = 7) {
   const now = dayjs()

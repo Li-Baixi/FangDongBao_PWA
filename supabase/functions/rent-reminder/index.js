@@ -111,6 +111,22 @@ Deno.serve(async (req) => {
     await notify(b.ownerId, `${who} ${b.period} 的租金逾期 ${overdueDays} 天，还差 ¥${fmtYuan(rest)}`)
   }
 
+  // ---- 3) 已过收租日、还没抄表建账（漏收预警，每 2 天一次） ----
+  // 场景：收租日过了但没建当期账单 —— 第 1 段只看当天、第 2 段只看已建账单，这里补盲区
+  for (const t of tenants ?? []) {
+    const rentDay = Math.min(t.rentDay || 1, daysInMonth)
+    if (day <= rentDay) continue // 本月收租日还没到
+    const hasBill = (bills ?? []).some((b) => b.tenantId === t.id && b.period === period)
+    if (hasBill) continue // 建了账的交给第 2 段
+    const overdueDays = day - rentDay
+    if (overdueDays % 2 !== 0) continue
+    const estimate = (t.monthlyRent || 0) + (t.internet || 0) +
+      (t.electric?.mode === 'flat' ? t.electric.flatAmount || 0 : 0) +
+      (t.water?.mode === 'flat' ? t.water.flatAmount || 0 : 0)
+    const who = t.room ? `${t.room}·${t.name}` : t.name
+    await notify(t.ownerId, `${who} 的收租日（${rentDay}号）已过 ${overdueDays} 天，还没建本期账单，约 ¥${fmtYuan(estimate)}`)
+  }
+
   return new Response(JSON.stringify({ ok: true, sent: results.length, detail: results }), {
     headers: { 'Content-Type': 'application/json' },
   })
