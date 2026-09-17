@@ -34,9 +34,18 @@ function stripLocalOnly(rec) {
   return rest
 }
 
+/**
+ * 深度转成普通对象：界面传下来的数据带着 Vue 响应式代理（Proxy），
+ * IndexedDB 的结构化克隆存不了代理，会报 DataCloneError。业务数据全是
+ * 纯 JSON 类型（字符串/数字/数组/普通对象），JSON 往返即可彻底脱壳。
+ */
+function plain(obj) {
+  return JSON.parse(JSON.stringify(obj))
+}
+
 /** 底层写入：盖时间戳 -> 存本地 -> （云模式）入同步队列 */
 async function persist(table, record, { notify = true } = {}) {
-  const rec = { ...record, updatedAt: nowTs() }
+  const rec = plain({ ...record, updatedAt: nowTs() })
   await db.table(table).put(rec)
   if (cloudEnabled && SYNCED.has(table)) {
     await db.outbox.add({ table, record: stripLocalOnly(rec), ts: nowTs() })
