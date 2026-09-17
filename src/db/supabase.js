@@ -17,7 +17,7 @@ export const supabase = cloudEnabled
   : null
 
 /** 参与云同步的表（photos/outbox/meta 只在本地） */
-export const SYNC_TABLES = ['landlords', 'buildings', 'tenants', 'meterReadings', 'bills', 'payments', 'familyGroups']
+export const SYNC_TABLES = ['landlords', 'buildings', 'tenants', 'meterReadings', 'bills', 'payments']
 
 /** Web Push 的 VAPID 公钥（服务端持有私钥），未配置则推送按钮隐藏 */
 export const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || ''

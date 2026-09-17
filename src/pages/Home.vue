@@ -60,16 +60,12 @@ const monthStat = computed(() => {
   return { receivable, received, unpaid: receivable - received, count }
 })
 
-// 查看范围切换：成员可切"我的/家庭组"；管理员可再切"全部"和各成员
-const myFamily = computed(() => data.familyGroups.find((g) => g.id === session.current?.familyGroupId) || null)
+// 查看范围切换（管理员）：我的 / 全部 / 各成员
 const viewingOptions = computed(() => {
-  const opts = [{ text: `我的（${session.current?.name || ''}）`, value: 'self' }]
-  if (myFamily.value) opts.push({ text: `家庭组（${myFamily.value.name}）`, value: 'family' })
-  if (session.isAdmin) {
-    opts.push({ text: '全部', value: 'all' })
-    for (const l of data.landlords) {
-      if (l.id !== session.current?.id) opts.push({ text: l.name, value: l.id })
-    }
+  if (!session.isAdmin) return []
+  const opts = [{ text: `我的（${session.current?.name || ''}）`, value: 'self' }, { text: '全部', value: 'all' }]
+  for (const l of data.landlords) {
+    if (l.id !== session.current?.id) opts.push({ text: l.name, value: l.id })
   }
   return opts
 })
@@ -109,11 +105,7 @@ function onUpcomingClick(u) {
           <span v-if="session.pendingSync > 0" class="home__sync" @click="onRefresh">
             <van-icon name="replay" /> 待同步 {{ session.pendingSync }}
           </span>
-          <van-dropdown-menu
-            v-if="session.isAdmin || myFamily"
-            :active-color="'var(--fdb-primary)'"
-            class="home__dropdown"
-          >
+          <van-dropdown-menu v-if="session.isAdmin" :active-color="'var(--fdb-primary)'" class="home__dropdown">
             <van-dropdown-item v-model="viewingValue" :options="viewingOptions" @change="onViewingChange" />
           </van-dropdown-menu>
           <span v-else class="home__viewing">{{ session.current?.name }}</span>

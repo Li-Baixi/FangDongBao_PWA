@@ -19,7 +19,7 @@ db.version(1).stores({
   meta: 'key', // 杂项键值：当前档案、同步游标等
 })
 
-// v2：家庭组（自愿组建，组内共享数据、合并统计）
+// v2：历史遗留空表（早期版本的"家庭组"已下线，schema 保留以免已升级的库报错）
 db.version(2).stores({
   familyGroups: 'id, updatedAt',
 })

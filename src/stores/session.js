@@ -183,50 +183,48 @@ export const useSessionStore = defineStore('session', {
       this.viewing = v
     },
 
-    // ---------- 家庭组（自愿组建：组内共享数据、合并统计） ----------
-    /** 生成 6 位邀请码（去掉易混淆的 0O1I） */
-    _genInviteCode() {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-      let s = ''
-      for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)]
-      return s
-    },
-
-    /** 创建家庭组并自动加入 */
-    async createFamily(name) {
-      if (!this.current) throw new Error('请先登录')
-      const group = await repo.saveFamilyGroup({
-        id: uid(),
-        name: name.trim() || '我的家庭组',
-        inviteCode: this._genInviteCode(),
-        ownerId: this.current.id,
-      })
-      await this._setFamilyGroupId(group.id)
-      return group
-    },
-
-    /** 输邀请码加入家庭组 */
-    async joinFamily(inviteCode) {
-      const group = await repo.findFamilyGroupByCode(inviteCode)
-      if (!group) throw new Error('邀请码不对，检查后重试')
-      if (group.deletedAt) throw new Error('这个家庭组已解散')
-      await this._setFamilyGroupId(group.id)
-      return group
-    },
-
-    /** 退出家庭组（只改自己，组和其他成员不受影响） */
-    async leaveFamily() {
-      await this._setFamilyGroupId(null)
-    },
-
-    async _setFamilyGroupId(gid) {
+    /**
+     * 注销账号（危险操作，入口在"我的"页，带双重确认+身份验证）：
+     * - 云模式：清空云端自己的全部数据 -> 调 Edge Function 删除登录账号 -> 清本机
+     * - 本地模式：物理删除本机该档案的全部数据
+     * 密码校验由入口页面先做，这里只管删。
+     */
+    async deleteAccount() {
       if (!this.current) return
-      const updated = await repo.saveLandlord({ ...this.current, familyGroupId: gid })
-      this.current = updated
-      this.viewing = 'self'
-      // 云模式立刻拉一遍：新组员的楼/账单要进本机缓存
+      const ownerId = this.current.id
       if (cloudEnabled && this.cloudUser) {
-        import('@/db/sync').then(({ pullAll }) => pullAll(false)).catch(() => {})
+        // 1. 清云端数据（RLS 只允许删自己的）
+        for (const t of ['buildings', 'tenants', 'meterReadings', 'bills', 'payments']) {
+          await supabase.from(t).delete().eq('ownerId', ownerId)
+        }
+        await supabase.from('landlords').delete().eq('id', ownerId)
+        // 2. 删除登录账号本体（需要 service key，走 Edge Function）
+        const { data: sess } = await supabase.auth.getSession()
+        const token = sess?.session?.access_token
+        let accountRemoved = false
+        try {
+          const { data: cfg } = await supabase.functions.invoke('delete-account', {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          accountRemoved = !cfg?.error
+        } catch {
+          accountRemoved = false
+        }
+        // 3. 清本机并登出
+        await repo.purgeLocalData(ownerId)
+        await repo.setSessionLandlordId(null)
+        await supabase.auth.signOut()
+        this.current = null
+        this.cloudUser = null
+        this.viewing = 'self'
+        if (!accountRemoved) {
+          throw new Error('本机与云端数据已清空；登录账号删除服务未部署，账号名保留（不影响安全，密码也只你有）')
+        }
+      } else {
+        await repo.purgeLocalData(ownerId)
+        await repo.setSessionLandlordId(null)
+        this.current = null
+        this.viewing = 'self'
       }
     },
   },

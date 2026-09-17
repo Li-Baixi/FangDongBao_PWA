@@ -1,5 +1,5 @@
 import { db, getMeta, setMeta } from './dexie'
-import { supabase, cloudEnabled, SYNC_TABLES } from './supabase'
+import { cloudEnabled, SYNC_TABLES } from './supabase'
 import { scheduleFlush, outboxCount } from './sync'
 import { uid, nowTs } from '@/utils/id'
 
@@ -264,46 +264,28 @@ export async function getPhoto(id) {
   return await db.photos.get(id)
 }
 
-// ============ 家庭组（自愿组建：组内共享数据、合并统计） ============
-
-export async function listFamilyGroups() {
-  const rows = await db.familyGroups.toArray()
-  return rows.filter((r) => !r.deletedAt).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
-}
-
-export async function saveFamilyGroup(data) {
-  const existing = data.id ? await db.familyGroups.get(data.id) : null
-  return persist('familyGroups', {
-    ...existing,
-    ...data,
-    id: data.id || uid(),
-    createdAt: existing?.createdAt || nowTs(),
-  })
-}
-
-export async function getFamilyGroup(id) {
-  const r = await db.familyGroups.get(id)
-  return r && !r.deletedAt ? r : null
-}
-
-/** 云端按邀请码查组（加入家庭组用；本地缓存里没有别人新建的组） */
-export async function findFamilyGroupByCode(inviteCode) {
-  if (cloudEnabled) {
-    const { data, error } = await supabase
-      .from('familyGroups')
-      .select('*')
-      .eq('inviteCode', String(inviteCode || '').trim().toUpperCase())
-      .maybeSingle()
-    if (error) throw new Error(error.message)
-    if (data) {
-      await db.familyGroups.put(data)
-      return data
+/**
+ * 注销账号：物理清空本机上该档案的所有数据（楼/租客/抄表/账单/收款/照片）。
+ * 云模式在调它之前先清云端。照片原图大、量大，这里直接整表按租客清。
+ */
+export async function purgeLocalData(ownerId) {
+  const tenantIds = (await db.tenants.toArray()).filter((t) => t.ownerId === ownerId).map((t) => t.id)
+  await db.transaction(
+    'rw',
+    [db.buildings, db.tenants, db.meterReadings, db.bills, db.payments, db.photos, db.landlords],
+    async () => {
+      await db.buildings.where('ownerId').equals(ownerId).delete()
+      await db.tenants.where('ownerId').equals(ownerId).delete()
+      for (const tid of tenantIds) {
+        await db.meterReadings.where('tenantId').equals(tid).delete()
+        await db.bills.where('tenantId').equals(tid).delete()
+        await db.payments.where('tenantId').equals(tid).delete()
+        await db.photos.where('tenantId').equals(tid).delete()
+      }
+      await db.landlords.delete(ownerId)
     }
-    return null
-  }
-  // 本地模式：直接查本地（演示/测试用）
-  const rows = await db.familyGroups.toArray()
-  return rows.find((r) => !r.deletedAt && r.inviteCode === String(inviteCode || '').trim().toUpperCase()) || null
+  )
+  emitChange('purge')
 }
 
 export async function getSessionLandlordId() {
@@ -357,11 +339,8 @@ const repo = {
   // photos
   savePhoto,
   getPhoto,
-  // family groups
-  listFamilyGroups,
-  saveFamilyGroup,
-  getFamilyGroup,
-  findFamilyGroupByCode,
+  // 注销
+  purgeLocalData,
   // session
   getSessionLandlordId,
   setSessionLandlordId,

@@ -40,7 +40,76 @@ function onTapVersion() {
 }
 const showAdminEntry = ref(false)
 
-const myFamily = computed(() => data.familyGroups.find((g) => g.id === session.current?.familyGroupId) || null)
+// ===== 注销账号（危险操作） =====
+const showDeleteWarn = ref(false) // 第一步：警告
+const showDeleteVerify = ref(false) // 第二步：身份验证（云=密码，本地=档案名）
+const verifyValue = ref('')
+const showDeleteFinal = ref(false) // 第三步：输入"注销"最终确认
+const finalValue = ref('')
+const deleting = ref(false)
+
+function onDeleteClick() {
+  verifyValue.value = ''
+  finalValue.value = ''
+  showDeleteWarn.value = true
+}
+
+/** 第二步验证：云模式要求重输登录密码（服务端核验），本地模式要求输入档案名 */
+async function onVerifyConfirm() {
+  const v = verifyValue.value.trim()
+  if (session.isCloud) {
+    if (!v) {
+      showToast('请输入登录密码')
+      return
+    }
+    const loading = showLoadingToast({ message: '核验密码…', forbidClick: true, duration: 0 })
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: session.cloudUser?.email,
+        password: v,
+      })
+      loading.close()
+      if (error) {
+        showToast('密码不对')
+        return
+      }
+    } catch (e) {
+      loading.close()
+      showToast('核验失败，请重试')
+      return
+    }
+  } else {
+    if (v !== session.current?.name) {
+      showToast(`请输入档案名「${session.current?.name}」`)
+      return
+    }
+  }
+  showDeleteVerify.value = false
+  showDeleteFinal.value = true
+}
+
+async function onFinalConfirm() {
+  if (finalValue.value.trim() !== '注销') {
+    showToast('输入「注销」两个字才会执行')
+    return false // 阻止弹窗关闭，让用户重输
+  }
+  showDeleteFinal.value = false
+  deleting.value = true
+  const loading = showLoadingToast({ message: '正在注销…', forbidClick: true, duration: 0 })
+  let warn = ''
+  try {
+    await session.deleteAccount()
+  } catch (e) {
+    warn = e.message || '部分清理未完成'
+  } finally {
+    loading.close()
+    deleting.value = false
+  }
+  await data.reload()
+  showToast(warn || '账号已注销')
+  router.replace({ name: 'profiles' })
+  return true
+}
 
 const pushSupported = computed(
   () => session.isCloud && vapidPublicKey && 'serviceWorker' in navigator && 'PushManager' in window
@@ -226,13 +295,6 @@ async function signOut() {
     <van-cell-group inset title="日常">
       <van-cell title="楼栋管理" icon="shop-o" is-link @click="router.push({ name: 'buildings' })" />
       <van-cell
-        title="家庭组"
-        icon="friends-o"
-        is-link
-        :value="myFamily ? myFamily.name : '未加入'"
-        @click="router.push({ name: 'family' })"
-      />
-      <van-cell
         v-if="showAdminEntry && session.isAdmin"
         title="平台管理"
         icon="setting-o"
@@ -265,12 +327,72 @@ async function signOut() {
 
     <div style="padding: 20px">
       <van-button round block plain type="danger" @click="signOut">退出登录</van-button>
+      <div class="mine__delete-entry" @click="onDeleteClick">注销账号（删除全部数据）</div>
     </div>
     <div style="height: 24px"></div>
+
+    <!-- 注销第一步：警告 -->
+    <van-dialog
+      v-model:show="showDeleteWarn"
+      title="要注销账号吗？"
+      show-cancel-button
+      confirm-button-text="继续注销"
+      confirm-button-color="#ee0a24"
+      @confirm="showDeleteVerify = true"
+    >
+      <div class="mine__warn">
+        将永久删除你的 <b>全部楼栋、租客、账单、收款记录和照片</b>，且无法找回。
+        家里其他人若是各自记录，他们的数据不受影响。
+      </div>
+    </van-dialog>
+
+    <!-- 注销第二步：身份验证 -->
+    <van-dialog
+      v-model:show="showDeleteVerify"
+      :title="session.isCloud ? '验证登录密码' : '验证身份'"
+      show-cancel-button
+      confirm-button-text="下一步"
+      @confirm="onVerifyConfirm"
+      @cancel="verifyValue = ''"
+    >
+      <van-field
+        v-model="verifyValue"
+        :type="session.isCloud ? 'password' : 'text'"
+        label=""
+        :placeholder="session.isCloud ? '输入登录密码' : `输入档案名「${session.current?.name}」`"
+      />
+    </van-dialog>
+
+    <!-- 注销第三步：输入"注销" -->
+    <van-dialog
+      v-model:show="showDeleteFinal"
+      title="最后一步"
+      show-cancel-button
+      confirm-button-text="确认注销"
+      confirm-button-color="#ee0a24"
+      :before-close="(action) => (action !== 'confirm' ? true : onFinalConfirm())"
+    >
+      <div class="mine__warn">输入「注销」两个字，点击确认注销。此操作不可撤销。</div>
+      <van-field v-model="finalValue" placeholder="注销" center />
+    </van-dialog>
   </div>
 </template>
 
 <style scoped>
+.mine__delete-entry {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #c8c9cc;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mine__warn {
+  padding: 12px 20px;
+  font-size: 13px;
+  color: #646566;
+  line-height: 1.7;
+}
 .mine__profile {
   display: flex;
   align-items: center;
