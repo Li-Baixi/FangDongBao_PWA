@@ -18,7 +18,9 @@ const router = useRouter()
 const session = useSessionStore()
 const data = useDataStore()
 
-const version = '0.1.0'
+// __BUILD_TIME__ 由 vite 构建时注入（vite.config.js define），用来对照线上新旧版本
+const version = __APP_VERSION__
+const buildTime = __BUILD_TIME__
 
 const pushSupported = computed(
   () => session.isCloud && vapidPublicKey && 'serviceWorker' in navigator && 'PushManager' in window
@@ -230,7 +232,7 @@ async function signOut() {
     <input ref="fileInput" type="file" accept="application/json,.json" style="display: none" @change="importBackup" />
 
     <van-cell-group inset title="关于">
-      <van-cell title="版本" :value="`v${version}`" />
+      <van-cell title="版本" :value="`v${version}（${buildTime}）`" />
       <van-cell title="使用说明" icon="question-o" is-link @click="router.push({ name: 'installGuide' })" />
     </van-cell-group>
 

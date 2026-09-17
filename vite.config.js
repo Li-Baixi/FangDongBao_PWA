@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -6,6 +7,8 @@ import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 // GitHub Pages 部署在 https://li-baixi.github.io/FangDongBao_PWA/ 子路径下
 const BASE = '/FangDongBao_PWA/'
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
 export default defineConfig({
   base: BASE,
@@ -59,6 +62,13 @@ export default defineConfig({
   ],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
+  define: {
+    // 构建时注入版本信息，"我的"页展示，用来判断线上跑的是不是最新版
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_TIME__: JSON.stringify(
+      new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+    ),
   },
   build: {
     chunkSizeWarningLimit: 1500,
