@@ -418,6 +418,7 @@ onMounted(() => {
         </div>
         <MeterPhotoStep
           :title="`${UTIL_ICON[curUtil]} ${UTIL_NAME[curUtil]}`"
+          :utility="curUtil"
           :unit="UTIL_UNIT[curUtil]"
           :price-fen="utilPrice(curUtil)"
           v-model:modelPrev="meters[curUtil].prev"

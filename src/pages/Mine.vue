@@ -5,12 +5,13 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog, showLoadingToast } from 'vant'
-import { db } from '@/db/dexie'
+import { db, getMeta } from '@/db/dexie'
 import repo from '@/db/repo'
 import { supabase, vapidPublicKey } from '@/db/supabase'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { dataUrlToBlob } from '@/utils/image'
+import { AI_PRESETS, setAiConfig, testAiConfig } from '@/utils/aiocr'
 import { urlBase64ToUint8Array } from '@/utils/push'
 import { uid, nowTs } from '@/utils/id'
 
@@ -145,6 +146,75 @@ async function enablePush() {
   } catch (e) {
     showToast(`开启失败：${e.message || e}`)
   }
+}
+
+// ===== 识别设置（抄表自动读数：默认本地免费，可选接大模型） =====
+const showAi = ref(false)
+const showAiPreset = ref(false)
+const aiPresetIdx = ref(0)
+const aiForm = ref({ base: '', key: '', model: '' })
+const aiEnabled = ref(false)
+
+const aiPresetActions = AI_PRESETS.map((p, i) => ({ name: p.name, index: i }))
+
+loadAiState()
+async function loadAiState() {
+  const cfg = await getMeta('aiOcrConfig', null)
+  aiEnabled.value = !!(cfg && cfg.base && cfg.key && cfg.model)
+}
+
+function openAiSettings() {
+  getMeta('aiOcrConfig', null).then((cfg) => {
+    aiForm.value = { base: cfg?.base || '', key: cfg?.key || '', model: cfg?.model || '' }
+    const i = AI_PRESETS.findIndex((p) => p.base && p.base === aiForm.value.base)
+    aiPresetIdx.value = i >= 0 ? i : AI_PRESETS.length - 1 // 匹配不到预设就算"自定义"
+  })
+  showAi.value = true
+}
+
+function onPresetAction(action) {
+  aiPresetIdx.value = action.index
+  const p = AI_PRESETS[action.index]
+  if (p && p.base) {
+    aiForm.value.base = p.base
+    aiForm.value.model = p.model
+  }
+  showAiPreset.value = false
+}
+
+async function saveAi() {
+  const { base, key, model } = aiForm.value
+  if (!base || !key || !model) return showToast('地址、API Key、模型名都要填')
+  await setAiConfig({ base: base.trim(), key: key.trim(), model: model.trim() })
+  aiEnabled.value = true
+  showAi.value = false
+  showToast('已保存，抄表识别将优先用大模型')
+}
+
+async function testAi() {
+  const { base, key, model } = aiForm.value
+  if (!base || !key || !model) return showToast('先填完整再测试')
+  const loading = showLoadingToast({ message: '测试中…', forbidClick: true, duration: 0 })
+  try {
+    await testAiConfig({ base: base.trim(), key: key.trim(), model: model.trim() })
+    loading.close()
+    showToast('连通正常，可以保存使用')
+  } catch (e) {
+    loading.close()
+    showToast(`不通：${(e.message || '').slice(0, 80)}`)
+  }
+}
+
+async function clearAi() {
+  try {
+    await showConfirmDialog({ title: '清除配置？', message: '清除后抄表识别回到免费的本地识别。' })
+  } catch {
+    return
+  }
+  await setAiConfig(null)
+  aiEnabled.value = false
+  aiForm.value = { base: '', key: '', model: '' }
+  showToast('已清除，使用本地识别')
 }
 
 // ===== 备份导出 / 导入 =====
@@ -295,6 +365,13 @@ async function signOut() {
     <van-cell-group inset title="日常">
       <van-cell title="楼栋管理" icon="shop-o" is-link @click="router.push({ name: 'buildings' })" />
       <van-cell
+        title="抄表识别设置"
+        icon="scan"
+        is-link
+        :value="aiEnabled ? '大模型' : '本地'"
+        @click="openAiSettings"
+      />
+      <van-cell
         v-if="showAdminEntry && session.isAdmin"
         title="平台管理"
         icon="setting-o"
@@ -330,6 +407,37 @@ async function signOut() {
       <div class="mine__delete-entry" @click="onDeleteClick">注销账号（删除全部数据）</div>
     </div>
     <div style="height: 24px"></div>
+
+    <!-- 识别设置弹层 -->
+    <van-popup v-model:show="showAi" position="bottom" round class="mine__ai-popup">
+      <div class="mine__ai">
+        <div class="mine__ai-title">抄表识别设置</div>
+        <div class="mine__ai-tip">
+          默认用<b>免费的本地识别</b>（不需要任何配置）。填入大模型 API Key
+          后，抄表时点"自动识别"会优先用大模型（识别更准），失败自动退回本地，不影响使用。
+          <br />Key 只保存在这台手机上，不上云、不同步、不会告诉别人。
+        </div>
+        <van-cell title="服务商" :value="AI_PRESETS[aiPresetIdx].name" is-link @click="showAiPreset = true" />
+        <van-field v-model="aiForm.base" label="接口地址" placeholder="https://…/v1" />
+        <van-field v-model="aiForm.key" label="API Key" type="password" placeholder="到服务商官网申请" />
+        <van-field v-model="aiForm.model" label="模型名" placeholder="如 glm-4v-flash（要选带视觉能力的）" />
+        <div class="mine__ai-btns">
+          <van-button size="small" plain round @click="testAi">测试连接</van-button>
+          <van-button size="small" plain round type="danger" @click="clearAi">清除</van-button>
+          <van-button size="small" round type="primary" @click="saveAi">保存</van-button>
+        </div>
+        <div class="mine__ai-note">
+          推荐智谱 GLM：bigmodel.cn 注册就送额度，模型 glm-4v-flash 免费，家庭抄表够用，0 成本。
+        </div>
+      </div>
+    </van-popup>
+    <van-action-sheet
+      v-model:show="showAiPreset"
+      :actions="aiPresetActions"
+      cancel-text="取消"
+      close-on-click-action
+      @select="onPresetAction"
+    />
 
     <!-- 注销第一步：警告 -->
     <van-dialog
@@ -379,6 +487,41 @@ async function signOut() {
 </template>
 
 <style scoped>
+.mine__ai-popup {
+  max-height: 85%;
+  overflow-y: auto;
+}
+.mine__ai {
+  padding: 18px 6px 26px;
+}
+.mine__ai-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #323233;
+  padding: 0 14px 10px;
+}
+.mine__ai-tip {
+  font-size: 12px;
+  color: #969799;
+  line-height: 1.8;
+  padding: 0 14px 14px;
+}
+.mine__ai-btns {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 14px 14px 0;
+}
+.mine__ai-btns .van-button {
+  min-width: 88px;
+}
+.mine__ai-note {
+  margin-top: 14px;
+  font-size: 11px;
+  color: #c8c9cc;
+  text-align: center;
+  line-height: 1.7;
+}
 .mine__delete-entry {
   margin-top: 14px;
   text-align: center;

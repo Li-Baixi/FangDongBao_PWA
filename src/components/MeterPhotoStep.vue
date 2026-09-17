@@ -1,17 +1,20 @@
 <script setup>
 /**
- * 抄表步骤组件：拍照/选图 + 上次读数 + 本次读数 + 可选的本地 OCR 识别。
+ * 抄表步骤组件：拍照/从相册选图 + 上次读数 + 本次读数 + OCR 识别。
+ * 识别优先级：用户配置了大模型 Key 就用大模型（更准），失败自动降级本地 OCR。
  * 强调：OCR 只做预填，数字必须人工过目确认。
  */
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { showToast, showLoadingToast } from 'vant'
 import { compressPhoto } from '@/utils/image'
 import { ocrDigits } from '@/utils/ocr'
+import { aiOcrDigits, getAiConfig } from '@/utils/aiocr'
 import { fmtReading } from '@/utils/dates'
 
 const props = defineProps({
   title: { type: String, required: true }, // "电表" / "水表"
   unit: { type: String, default: '度' }, // 度 / 吨
+  utility: { type: String, default: 'electric' }, // electric | water
   priceFen: { type: Number, default: 0 }, // 单价（分）
   prev: { type: [Number, String], default: '' },
   modelPrev: { type: [Number, String], default: '' },
@@ -20,7 +23,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelPrev', 'update:modelCur', 'photo'])
 
-const fileInput = ref(null)
+const shotInput = ref(null) // 直接拍照
+const pickInput = ref(null) // 从相册选
 const previewUrl = ref('')
 const ocrHint = ref('')
 
@@ -57,7 +61,23 @@ async function onFile(e) {
 
 async function runOcr() {
   if (!props.photoBlob) return showToast('先拍一张表的照片')
-  const loading = showLoadingToast({ message: '识别中…可能要几秒', forbidClick: true, duration: 0 })
+  // 优先大模型（用户在「我的 → 识别设置」配置过 Key 时）
+  const cfg = await getAiConfig()
+  if (cfg) {
+    const loading = showLoadingToast({ message: 'AI 识别中…', forbidClick: true, duration: 0 })
+    try {
+      const digits = await aiOcrDigits(props.photoBlob, props.utility, cfg)
+      loading.close()
+      emit('update:modelCur', digits)
+      ocrHint.value = `AI 识别为 ${digits}，请核对表盘无误后再继续`
+      return
+    } catch (e) {
+      loading.close()
+      showToast(`大模型识别失败（${(e.message || '').slice(0, 60)}），改用本地识别`)
+    }
+  }
+  // 本地 OCR（免费、离线）
+  const loading = showLoadingToast({ message: '本地识别中…可能要几秒', forbidClick: true, duration: 0 })
   try {
     const digits = await ocrDigits(props.photoBlob)
     loading.close()
@@ -79,18 +99,20 @@ async function runOcr() {
     <div class="meter__title">{{ title }}</div>
 
     <!-- 照片 -->
-    <div class="meter__photo" @click="fileInput && fileInput.click()">
+    <div class="meter__photo" @click="shotInput && shotInput.click()">
       <img v-if="previewUrl" :src="previewUrl" alt="表的照片" />
       <div v-else class="meter__photo-empty">
         <van-icon name="photograph" size="28" color="#969799" />
-        <div>点击拍照 / 选择图片</div>
+        <div>点击拍照，或点下方"相册"选已拍好的</div>
         <div class="meter__photo-tip">拍清楚数字区域，照片会存档作为凭据</div>
       </div>
     </div>
-    <input ref="fileInput" type="file" accept="image/*" capture="environment" style="display: none" @change="onFile" />
+    <input ref="shotInput" type="file" accept="image/*" capture="environment" style="display: none" @change="onFile" />
+    <input ref="pickInput" type="file" accept="image/*" style="display: none" @change="onFile" />
 
     <div class="meter__btns">
-      <van-button size="small" plain round icon="photograph" @click="fileInput && fileInput.click()">重拍</van-button>
+      <van-button size="small" plain round icon="photograph" @click="shotInput && shotInput.click()">重拍</van-button>
+      <van-button size="small" plain round icon="photo-o" @click="pickInput && pickInput.click()">相册</van-button>
       <van-button size="small" plain round type="primary" icon="scan" @click="runOcr">自动识别</van-button>
     </div>
     <div v-if="ocrHint" class="meter__ocr-hint">🤖 {{ ocrHint }}</div>
