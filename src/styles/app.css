@@ -1,0 +1,105 @@
+/* ===== 房东宝 全局样式 ===== */
+
+:root {
+  --fdb-primary: #0f766e; /* 主色：沉稳的青绿色，代表"收钱/账本"的安心感 */
+  --fdb-bg: #f6f7f8;
+  --fdb-card: #ffffff;
+  --fdb-danger: #ee0a24;
+  --fdb-warning: #ff976a;
+  --fdb-success: #07c160;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--fdb-bg);
+  -webkit-tap-highlight-color: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
+    Segoe UI, Arial, Roboto, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft Yahei', sans-serif;
+}
+
+#app {
+  min-height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 覆盖 Vant 主色，统一视觉 */
+.van-theme-light {
+  --van-primary-color: var(--fdb-primary);
+}
+
+/* 通用卡片 */
+.fdb-card {
+  background: var(--fdb-card);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 0 12px 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.fdb-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #323233;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 金额展示 */
+.fdb-money {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fdb-money--lg {
+  font-size: 24px;
+}
+.fdb-money--danger {
+  color: var(--fdb-danger);
+}
+.fdb-money--success {
+  color: var(--fdb-success);
+}
+
+/* 空状态 */
+.fdb-empty {
+  padding: 32px 0;
+  text-align: center;
+  color: #969799;
+  font-size: 13px;
+}
+
+/* 页面顶部留白（沉浸式状态栏） */
+.fdb-page {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* 小标签 */
+.fdb-tag {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+/* 状态色 */
+.fdb-tag--paid {
+  background: #e8f9ef;
+  color: var(--fdb-success);
+}
+.fdb-tag--partial {
+  background: #fff3e8;
+  color: #ff8c42;
+}
+.fdb-tag--overdue {
+  background: #ffecec;
+  color: var(--fdb-danger);
+}
+.fdb-tag--pending {
+  background: #eef2f5;
+  color: #6b7a86;
+}
