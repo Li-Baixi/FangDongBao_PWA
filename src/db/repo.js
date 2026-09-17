@@ -1,5 +1,5 @@
 import { db, getMeta, setMeta } from './dexie'
-import { cloudEnabled, SYNC_TABLES } from './supabase'
+import { supabase, cloudEnabled, SYNC_TABLES } from './supabase'
 import { scheduleFlush, outboxCount } from './sync'
 import { uid, nowTs } from '@/utils/id'
 
@@ -264,7 +264,47 @@ export async function getPhoto(id) {
   return await db.photos.get(id)
 }
 
-// ============ 会话与杂项 ============
+// ============ 家庭组（自愿组建：组内共享数据、合并统计） ============
+
+export async function listFamilyGroups() {
+  const rows = await db.familyGroups.toArray()
+  return rows.filter((r) => !r.deletedAt).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+}
+
+export async function saveFamilyGroup(data) {
+  const existing = data.id ? await db.familyGroups.get(data.id) : null
+  return persist('familyGroups', {
+    ...existing,
+    ...data,
+    id: data.id || uid(),
+    createdAt: existing?.createdAt || nowTs(),
+  })
+}
+
+export async function getFamilyGroup(id) {
+  const r = await db.familyGroups.get(id)
+  return r && !r.deletedAt ? r : null
+}
+
+/** 云端按邀请码查组（加入家庭组用；本地缓存里没有别人新建的组） */
+export async function findFamilyGroupByCode(inviteCode) {
+  if (cloudEnabled) {
+    const { data, error } = await supabase
+      .from('familyGroups')
+      .select('*')
+      .eq('inviteCode', String(inviteCode || '').trim().toUpperCase())
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    if (data) {
+      await db.familyGroups.put(data)
+      return data
+    }
+    return null
+  }
+  // 本地模式：直接查本地（演示/测试用）
+  const rows = await db.familyGroups.toArray()
+  return rows.find((r) => !r.deletedAt && r.inviteCode === String(inviteCode || '').trim().toUpperCase()) || null
+}
 
 export async function getSessionLandlordId() {
   return await getMeta('sessionLandlordId', null)
@@ -317,6 +357,11 @@ const repo = {
   // photos
   savePhoto,
   getPhoto,
+  // family groups
+  listFamilyGroups,
+  saveFamilyGroup,
+  getFamilyGroup,
+  findFamilyGroupByCode,
   // session
   getSessionLandlordId,
   setSessionLandlordId,

@@ -3,6 +3,7 @@ import dayjs from 'dayjs'
 import repo, { onRepoChange } from '@/db/repo'
 import { billStatus } from '@/db/billing'
 import { today, periodOf, monthDays } from '@/utils/dates'
+import { useSessionStore } from '@/stores/session'
 
 /**
  * 内存数据缓存：repo 任何写入都会自动触发 reload。
@@ -14,6 +15,7 @@ export const useDataStore = defineStore('data', {
   state: () => ({
     loading: false,
     landlords: [],
+    familyGroups: [],
     buildings: [],
     tenants: [],
     bills: [],
@@ -29,6 +31,13 @@ export const useDataStore = defineStore('data', {
       for (const p of s.payments) m[p.billId] = (m[p.billId] || 0) + (p.amount || 0)
       return m
     },
+    /** 家庭组成员的 landlord.id 集合（viewing='family' 时圈数据用） */
+    familyMemberIds(s) {
+      const session = useSessionStore()
+      const gid = session.current?.familyGroupId
+      if (!gid) return new Set()
+      return new Set(s.landlords.filter((l) => l.familyGroupId === gid && !l.deletedAt).map((l) => l.id))
+    },
   },
   actions: {
     bind() {
@@ -39,14 +48,16 @@ export const useDataStore = defineStore('data', {
     async reload() {
       this.loading = true
       try {
-        const [landlords, buildings, tenants, bills, payments] = await Promise.all([
+        const [landlords, familyGroups, buildings, tenants, bills, payments] = await Promise.all([
           repo.listLandlords(),
+          repo.listFamilyGroups(),
           repo.listBuildings(),
           repo.listTenants(),
           repo.listBills(),
           repo.listPayments(),
         ])
         this.landlords = landlords
+        this.familyGroups = familyGroups
         this.buildings = buildings
         this.tenants = tenants
         this.bills = bills
@@ -60,10 +71,15 @@ export const useDataStore = defineStore('data', {
 
 // ============ 派生视图（纯函数，页面直接调用） ============
 
-/** 数据是否在当前查看范围内 */
+/** 数据是否在当前查看范围内：self 自己 / family 家庭组 / all 全部（管理员）/ landlordId 某成员 */
 export function inScope(row, session) {
   if (!row) return false
   if (session.viewing === 'all') return true
+  if (session.viewing === 'family') {
+    // data store 在组件渲染时才可取（pinia 已激活），直接调用
+    const data = useDataStore()
+    return data.familyMemberIds.has(row.ownerId)
+  }
   const owner = session.viewing === 'self' ? session.current?.id : session.viewing
   return row.ownerId === owner
 }

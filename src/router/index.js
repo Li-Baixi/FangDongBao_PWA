@@ -10,6 +10,7 @@ const routes = [
   { path: '/stats', name: 'stats', component: () => import('@/pages/Stats.vue'), meta: { tab: 'stats' } },
   { path: '/mine', name: 'mine', component: () => import('@/pages/Mine.vue'), meta: { tab: 'mine' } },
   { path: '/buildings', name: 'buildings', component: () => import('@/pages/Buildings.vue') },
+  { path: '/family', name: 'family', component: () => import('@/pages/FamilyGroup.vue') },
   { path: '/admin', name: 'admin', component: () => import('@/pages/Admin.vue') },
   { path: '/profiles', name: 'profiles', component: () => import('@/pages/Profiles.vue') },
   { path: '/install-guide', name: 'installGuide', component: () => import('@/pages/InstallGuide.vue') },

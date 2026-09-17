@@ -60,13 +60,15 @@ const monthStat = computed(() => {
   return { receivable, received, unpaid: receivable - received, count }
 })
 
-// 管理员查看范围切换
+// 查看范围切换：成员可切"我的/家庭组"；管理员可再切"全部"和各成员
+const myFamily = computed(() => data.familyGroups.find((g) => g.id === session.current?.familyGroupId) || null)
 const viewingOptions = computed(() => {
-  if (!session.isAdmin) return []
-  const opts = [{ text: `我的（${session.current?.name || ''}）`, value: 'self' }, { text: '全家', value: 'all' }]
-  for (const l of data.landlords) {
-    if (l.id !== session.current?.id) {
-      opts.push({ text: l.name, value: l.id })
+  const opts = [{ text: `我的（${session.current?.name || ''}）`, value: 'self' }]
+  if (myFamily.value) opts.push({ text: `家庭组（${myFamily.value.name}）`, value: 'family' })
+  if (session.isAdmin) {
+    opts.push({ text: '全部', value: 'all' })
+    for (const l of data.landlords) {
+      if (l.id !== session.current?.id) opts.push({ text: l.name, value: l.id })
     }
   }
   return opts
@@ -89,6 +91,12 @@ async function onRefresh() {
 function goCollect(tenantId) {
   router.push({ name: 'collect', params: { tenantId: tenantId || '' } })
 }
+
+/** 近7天列表：今天的一键去收租，其余看租客详情 */
+function onUpcomingClick(u) {
+  if (u.inDays === 0) goCollect(u.tenant.id)
+  else router.push({ name: 'tenant', params: { id: u.tenant.id } })
+}
 </script>
 
 <template>
@@ -101,7 +109,11 @@ function goCollect(tenantId) {
           <span v-if="session.pendingSync > 0" class="home__sync" @click="onRefresh">
             <van-icon name="replay" /> 待同步 {{ session.pendingSync }}
           </span>
-          <van-dropdown-menu v-if="session.isAdmin" :active-color="'var(--fdb-primary)'" class="home__dropdown">
+          <van-dropdown-menu
+            v-if="session.isAdmin || myFamily"
+            :active-color="'var(--fdb-primary)'"
+            class="home__dropdown"
+          >
             <van-dropdown-item v-model="viewingValue" :options="viewingOptions" @change="onViewingChange" />
           </van-dropdown-menu>
           <span v-else class="home__viewing">{{ session.current?.name }}</span>
@@ -159,11 +171,17 @@ function goCollect(tenantId) {
         <div class="fdb-card-title">
           <span><van-icon name="calendar-o" /> 近 7 天收租日</span>
         </div>
-        <div class="home__row" v-for="u in upcoming" :key="u.tenant.id" @click="router.push({ name: 'tenant', params: { id: u.tenant.id } })">
+        <div
+          :class="['home__row', { 'home__row--today': u.inDays === 0 }]"
+          v-for="u in upcoming"
+          :key="u.tenant.id"
+          @click="onUpcomingClick(u)"
+        >
           <div class="home__row-main">
             <div>{{ roomLabel(u.tenant) }}{{ u.tenant.name }}</div>
           </div>
-          <div class="home__soon">{{ u.inDays === 0 ? '就是今天' : u.inDays === 1 ? '明天' : `${u.inDays} 天后` }}（每月{{ u.tenant.rentDay }}号）</div>
+          <span v-if="u.inDays === 0" class="home__today-tag">今天收</span>
+          <div v-else class="home__soon">{{ u.inDays === 1 ? '明天' : `${u.inDays} 天后` }}（每月{{ u.tenant.rentDay }}号）</div>
         </div>
       </div>
 
@@ -231,18 +249,29 @@ function goCollect(tenantId) {
 }
 .home__sync {
   font-size: 12px;
-  color: #969799;
+  color: #6b6b6b;
+  background: #f2f3f5;
+  border-radius: 999px;
+  padding: 5px 10px;
   cursor: pointer;
 }
 .home__viewing {
   font-size: 13px;
   color: #323233;
+  background: #f2f3f5;
+  border-radius: 999px;
+  padding: 5px 12px;
 }
 .home__dropdown {
-  height: 28px;
-  border-radius: 6px;
+  height: 30px;
+  border-radius: 999px;
   box-shadow: none;
+  background: #f2f3f5;
   border: 1px solid #ebedf0;
+  overflow: hidden;
+}
+.home__dropdown :deep(.van-dropdown-menu__title) {
+  border-radius: 999px;
 }
 .home__row {
   display: flex;
@@ -279,6 +308,21 @@ function goCollect(tenantId) {
 .home__soon {
   font-size: 12px;
   color: #969799;
+}
+.home__row--today {
+  background: #eef6f4;
+  border-radius: 8px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.home__today-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--fdb-primary);
+  border-radius: 999px;
+  padding: 5px 10px;
+  white-space: nowrap;
 }
 .home__stat {
   display: flex;

@@ -4,7 +4,7 @@
  * 计费规则核心：房租、收租日、押金、电费模式、水费模式、网费。
  */
 import { ref, watch, computed } from 'vue'
-import { showToast } from 'vant'
+import { showToast, showConfirmDialog } from 'vant'
 import repo from '@/db/repo'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
@@ -27,6 +27,20 @@ const MODE_OPTIONS = [
 
 const name = ref('')
 const phone = ref('')
+// 电话位数提醒：手机 11 位；座机 7-8 位，带区号 10-12 位。填了但位数不像就提醒
+const phoneDigits = computed(() => phone.value.replace(/\D/g, ''))
+const phoneInvalid = computed(() => {
+  const n = phoneDigits.value.length
+  return n > 0 && n !== 11 && !(n >= 7 && n <= 12)
+})
+const phoneHint = computed(() => {
+  const n = phoneDigits.value.length
+  if (n === 0) return ''
+  if (n < 7) return `才 ${n} 位，还没输完吧？`
+  if (n > 12) return `超了，已输入 ${n} 位`
+  if (n !== 11) return '这是座机号吗？手机号是 11 位'
+  return ''
+})
 const room = ref('')
 const buildingId = ref('')
 const rentYuan = ref('')
@@ -82,6 +96,14 @@ watch(
 async function save() {
   if (!name.value.trim()) return showToast('请填写租客姓名')
   if (yuanToFen(rentYuan.value) <= 0) return showToast('请填写月房租')
+  // 电话位数不对时提醒一次，允许坚持保存（座机等特殊情况）
+  if (phoneInvalid.value) {
+    try {
+      await showConfirmDialog({ title: '电话位数好像不对', message: `${phoneHint.value}，确定这样保存吗？` })
+    } catch {
+      return
+    }
+  }
   const t = props.tenant
   await repo.saveTenant({
     id: t?.id,
@@ -121,7 +143,15 @@ async function save() {
 
       <van-cell-group inset>
         <van-field v-model="name" label="姓名" placeholder="租客怎么称呼" required />
-        <van-field v-model="phone" type="tel" label="电话" placeholder="选填" />
+        <van-field
+          v-model="phone"
+          type="tel"
+          label="电话"
+          placeholder="选填，手机 11 位"
+          maxlength="13"
+          :error="phoneInvalid"
+          :error-message="phoneHint"
+        />
         <van-field v-model="room" label="房号" placeholder="如：302" />
         <van-field :model-value="buildingText" is-link readonly label="所在楼栋" @click="showBuildingPicker = true" />
       </van-cell-group>

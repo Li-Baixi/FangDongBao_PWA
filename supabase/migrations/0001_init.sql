@@ -12,7 +12,19 @@ create table if not exists public.landlords (
   "name" text not null,
   "role" text not null default 'member' check ("role" in ('admin', 'member')),
   "authUid" uuid unique references auth.users (id) on delete set null,
+  "familyGroupId" uuid, -- 所属家庭组（不建外键：组解散时成员置空即可）
   "prefs" jsonb default '{}',
+  "createdAt" bigint default 0,
+  "updatedAt" bigint default 0,
+  "deletedAt" bigint
+);
+
+-- ---------- 家庭组（自愿组建：组内共享数据、合并统计） ----------
+create table if not exists public.familyGroups (
+  "id" uuid primary key,
+  "name" text not null,
+  "inviteCode" text not null unique, -- 6 位邀请码，家人输码加入
+  "ownerId" uuid not null,           -- 组建人（auth.users.id）
   "createdAt" bigint default 0,
   "updatedAt" bigint default 0,
   "deletedAt" bigint
@@ -146,6 +158,26 @@ as $$
   );
 $$;
 
+-- 是否与某账号同属一个家庭组（组内互相可见数据）
+create or replace function public.same_family(p_other uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.landlords me
+    join public.landlords other on other."authUid" = p_other
+    where me."authUid" = auth.uid()
+      and me."familyGroupId" is not null
+      and me."familyGroupId" = other."familyGroupId"
+      and me."deletedAt" is null
+      and other."deletedAt" is null
+  );
+$$;
+
 -- 管理员角色保护：非管理员不能把任何人（含自己）设为管理员；第一位用户除外
 create or replace function public.guard_landlord_role()
 returns trigger
@@ -188,20 +220,28 @@ create policy "landlords_insert" on public.landlords for insert to authenticated
 create policy "landlords_update" on public.landlords for update to authenticated using ("authUid" = auth.uid() or public.is_admin());
 create policy "landlords_delete" on public.landlords for delete to authenticated using ("authUid" = auth.uid() or public.is_admin());
 
--- 业务表统一策略
+-- 业务表统一策略：自己 / 同家庭组 / 管理员
 do $$
 declare
   t text;
 begin
   foreach t in array array['buildings', 'tenants', 'meterReadings', 'bills', 'payments']
   loop
-    execute format('create policy "%s_select" on public.%I for select to authenticated using ("ownerId" = auth.uid() or public.is_admin());', t, t);
+    execute format('create policy "%s_select" on public.%I for select to authenticated using ("ownerId" = auth.uid() or public.same_family("ownerId") or public.is_admin());', t, t);
     execute format('create policy "%s_insert" on public.%I for insert to authenticated with check ("ownerId" = auth.uid() or public.is_admin());', t, t);
     execute format('create policy "%s_update" on public.%I for update to authenticated using ("ownerId" = auth.uid() or public.is_admin());', t, t);
     execute format('create policy "%s_delete" on public.%I for delete to authenticated using ("ownerId" = auth.uid() or public.is_admin());', t, t);
   end loop;
 end;
 $$;
+
+-- 家庭组：登录用户都能看（输邀请码加入的前提）；只有组建人和管理员能改
+alter table public.familyGroups enable row level security;
+create index if not exists idx_familygroups_sync on public.familyGroups ("updatedAt");
+create policy "familygroups_select" on public.familyGroups for select to authenticated using (true);
+create policy "familygroups_insert" on public.familyGroups for insert to authenticated with check ("ownerId" = auth.uid());
+create policy "familygroups_update" on public.familyGroups for update to authenticated using ("ownerId" = auth.uid() or public.is_admin());
+create policy "familygroups_delete" on public.familyGroups for delete to authenticated using ("ownerId" = auth.uid() or public.is_admin());
 
 -- 推送订阅：每人只管自己的
 create policy "push_select" on public.push_subscriptions for select to authenticated using ("authUid" = auth.uid());

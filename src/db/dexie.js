@@ -19,6 +19,11 @@ db.version(1).stores({
   meta: 'key', // 杂项键值：当前档案、同步游标等
 })
 
+// v2：家庭组（自愿组建，组内共享数据、合并统计）
+db.version(2).stores({
+  familyGroups: 'id, updatedAt',
+})
+
 export async function getMeta(key, def = null) {
   const row = await db.meta.get(key)
   return row ? row.value : def

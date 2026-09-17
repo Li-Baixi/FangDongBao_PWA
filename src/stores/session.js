@@ -24,12 +24,6 @@ export const useSessionStore = defineStore('session', {
   getters: {
     isAdmin: (s) => s.current?.role === 'admin',
     isCloud: (s) => s.mode === 'cloud',
-    viewingName(s) {
-      if (s.viewing === 'self' || !s.current) return s.current?.name || '我'
-      if (s.viewing === 'all') return '全家'
-      // 从 data store 的 landlords 里找名字（页面里兜底显示）
-      return s._viewingNameCache || '成员'
-    },
   },
   actions: {
     async init() {
@@ -187,6 +181,53 @@ export const useSessionStore = defineStore('session', {
 
     setViewing(v) {
       this.viewing = v
+    },
+
+    // ---------- 家庭组（自愿组建：组内共享数据、合并统计） ----------
+    /** 生成 6 位邀请码（去掉易混淆的 0O1I） */
+    _genInviteCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+      let s = ''
+      for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)]
+      return s
+    },
+
+    /** 创建家庭组并自动加入 */
+    async createFamily(name) {
+      if (!this.current) throw new Error('请先登录')
+      const group = await repo.saveFamilyGroup({
+        id: uid(),
+        name: name.trim() || '我的家庭组',
+        inviteCode: this._genInviteCode(),
+        ownerId: this.current.id,
+      })
+      await this._setFamilyGroupId(group.id)
+      return group
+    },
+
+    /** 输邀请码加入家庭组 */
+    async joinFamily(inviteCode) {
+      const group = await repo.findFamilyGroupByCode(inviteCode)
+      if (!group) throw new Error('邀请码不对，检查后重试')
+      if (group.deletedAt) throw new Error('这个家庭组已解散')
+      await this._setFamilyGroupId(group.id)
+      return group
+    },
+
+    /** 退出家庭组（只改自己，组和其他成员不受影响） */
+    async leaveFamily() {
+      await this._setFamilyGroupId(null)
+    },
+
+    async _setFamilyGroupId(gid) {
+      if (!this.current) return
+      const updated = await repo.saveLandlord({ ...this.current, familyGroupId: gid })
+      this.current = updated
+      this.viewing = 'self'
+      // 云模式立刻拉一遍：新组员的楼/账单要进本机缓存
+      if (cloudEnabled && this.cloudUser) {
+        import('@/db/sync').then(({ pullAll }) => pullAll(false)).catch(() => {})
+      }
     },
   },
 })

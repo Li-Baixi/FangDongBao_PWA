@@ -22,6 +22,26 @@ const data = useDataStore()
 const version = __APP_VERSION__
 const buildTime = __BUILD_TIME__
 
+// 隐秘管理员入口：连点版本行 5 次（1.5 秒内）出现"平台管理"入口。
+// 权限仍由账号 role 决定，这里只是不把入口亮给家里人。
+const versionTaps = ref({ count: 0, timer: null })
+function onTapVersion() {
+  const st = versionTaps.value
+  st.count += 1
+  clearTimeout(st.timer)
+  st.timer = setTimeout(() => (st.count = 0), 1500)
+  if (st.count >= 5) {
+    st.count = 0
+    if (session.isAdmin) {
+      showAdminEntry.value = true
+      showToast('已显示管理员入口')
+    }
+  }
+}
+const showAdminEntry = ref(false)
+
+const myFamily = computed(() => data.familyGroups.find((g) => g.id === session.current?.familyGroupId) || null)
+
 const pushSupported = computed(
   () => session.isCloud && vapidPublicKey && 'serviceWorker' in navigator && 'PushManager' in window
 )
@@ -206,9 +226,16 @@ async function signOut() {
     <van-cell-group inset title="日常">
       <van-cell title="楼栋管理" icon="shop-o" is-link @click="router.push({ name: 'buildings' })" />
       <van-cell
-        v-if="session.isAdmin"
-        title="家庭成员管理"
+        title="家庭组"
         icon="friends-o"
+        is-link
+        :value="myFamily ? myFamily.name : '未加入'"
+        @click="router.push({ name: 'family' })"
+      />
+      <van-cell
+        v-if="showAdminEntry && session.isAdmin"
+        title="平台管理"
+        icon="setting-o"
         is-link
         @click="router.push({ name: 'admin' })"
       />
@@ -232,7 +259,7 @@ async function signOut() {
     <input ref="fileInput" type="file" accept="application/json,.json" style="display: none" @change="importBackup" />
 
     <van-cell-group inset title="关于">
-      <van-cell title="版本" :value="`v${version}（${buildTime}）`" />
+      <van-cell title="版本" :value="`v${version}（${buildTime}）`" @click="onTapVersion" />
       <van-cell title="使用说明" icon="question-o" is-link @click="router.push({ name: 'installGuide' })" />
     </van-cell-group>
 

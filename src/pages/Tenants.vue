@@ -4,10 +4,11 @@
  */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import dayjs from 'dayjs'
 import { useSessionStore } from '@/stores/session'
-import { useDataStore, tenantDebt, inScope } from '@/stores/data'
+import { useDataStore, tenantDebt, inScope, billView } from '@/stores/data'
 import { formatFen } from '@/utils/money'
-import { today } from '@/utils/dates'
+import { today, periodOf } from '@/utils/dates'
 import TenantForm from '@/components/TenantForm.vue'
 
 const router = useRouter()
@@ -40,6 +41,43 @@ const groups = computed(() => {
 
 function debtOf(t) {
   return tenantDebt(t.id, data.bills, data.paidByBill, tStr)
+}
+
+/** 本月账单是否已全部结清 */
+function monthSettled(t) {
+  const period = periodOf()
+  const bills = data.bills.filter((b) => b.tenantId === t.id && b.period === period)
+  return bills.length > 0 && bills.every((b) => billView(b, data.paidByBill, tStr).status === 'paid')
+}
+
+/** 距下次收租日还有几天（0=今天，收租日按月末钳位） */
+function rentDaysAway(t) {
+  const now = dayjs()
+  const todayD = now.date()
+  const thisLen = now.daysInMonth()
+  const rd = Math.min(t.rentDay || 1, thisLen)
+  let diff = rd - todayD
+  if (diff < 0) {
+    const nextLen = now.add(1, 'month').daysInMonth()
+    diff = thisLen - todayD + Math.min(t.rentDay || 1, nextLen)
+  }
+  return diff
+}
+
+/**
+ * 右侧状态标语：有欠款只显金额；无欠款时区分
+ * "本月已收 / 今天收租 / 明天 / N天后 / 每月N号"，不再笼统显示"不欠"。
+ */
+function badgeOf(t) {
+  if (t.status !== 'active') return null
+  if (debtOf(t) > 0) return null
+  if (monthSettled(t)) return { text: '本月已收', cls: 'ok' }
+  const d = rentDaysAway(t)
+  if (d === 0) return { text: '今天收租', cls: 'today' }
+  if (d === 1) return { text: '明天收租', cls: 'soon' }
+  if (d <= 3) return { text: `${d}天后收租`, cls: 'soon' }
+  const clamped = Math.min(t.rentDay || 1, dayjs().daysInMonth())
+  return { text: `每月${clamped}号收租`, cls: 'plain' }
 }
 
 function utilSummary(t) {
@@ -87,8 +125,12 @@ function utilSummary(t) {
           </div>
         </div>
         <div class="tenants__side">
-          <div v-if="debtOf(t) > 0" class="fdb-money fdb-money--danger">{{ formatFen(debtOf(t), { comma: true }) }}</div>
-          <div v-else-if="t.status === 'active'" style="color: #07c160; font-size: 12px">✔ 不欠</div>
+          <template v-if="debtOf(t) > 0">
+            <div class="fdb-money fdb-money--danger">{{ formatFen(debtOf(t), { comma: true }) }}</div>
+          </template>
+          <span v-else-if="badgeOf(t)" :class="['tenants__badge', `tenants__badge--${badgeOf(t).cls}`]">
+            {{ badgeOf(t).text }}
+          </span>
           <van-icon name="arrow" color="#c8c9cc" />
         </div>
       </div>
@@ -141,5 +183,29 @@ function utilSummary(t) {
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+.tenants__badge {
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.tenants__badge--today {
+  color: #fff;
+  background: var(--fdb-primary);
+  font-weight: 600;
+}
+.tenants__badge--soon {
+  color: #b26205;
+  background: #fff3e0;
+}
+.tenants__badge--ok {
+  color: #07c160;
+  background: #e8f8ef;
+}
+.tenants__badge--plain {
+  color: #898781;
+  background: #f2f3f5;
 }
 </style>
