@@ -86,6 +86,21 @@ function goCollect() {
   router.push({ name: 'collect', params: { tenantId: tenant.value.id } })
 }
 
+// ===== 证件与合同（默认折叠） =====
+const showDocs = ref(false)
+const docs = computed(() => tenant.value?.docs || [])
+
+async function previewDoc(d) {
+  let url = d.thumb
+  try {
+    const p = await repo.getPhoto(d.id)
+    if (p && p.blob) url = URL.createObjectURL(p.blob)
+  } catch {
+    /* 本机没有原图（别的设备拍的），用同步的缩略图 */
+  }
+  previewThumb(url)
+}
+
 function previewThumb(dataUrl) {
   // 简易大图预览
   const overlay = document.createElement('div')
@@ -140,6 +155,30 @@ function previewThumb(dataUrl) {
         <van-button size="small" round plain icon="edit" @click="showEdit = true">编辑</van-button>
         <van-button v-if="tenant.status === 'active'" size="small" round plain type="danger" @click="markLeft">退租</van-button>
         <van-button v-else size="small" round plain type="primary" @click="markActive">恢复在租</van-button>
+      </div>
+    </div>
+
+    <!-- 证件与合同（默认折叠） -->
+    <div class="fdb-card" v-if="docs.length">
+      <div class="fdb-card-title td__docs-head" @click="showDocs = !showDocs">
+        <span>🗂 证件与合同（{{ docs.length }} 张）</span>
+        <van-icon :name="showDocs ? 'arrow-up' : 'arrow-down'" color="#969799" />
+      </div>
+      <div v-if="showDocs" class="td__docs">
+        <template v-for="kind in ['idcard', 'contract']" :key="kind">
+          <div v-if="docs.some((d) => d.kind === kind)" class="td__docs-label">
+            {{ kind === 'idcard' ? '身份证' : '合同' }}
+          </div>
+          <div v-if="docs.some((d) => d.kind === kind)" class="td__thumbs">
+            <img
+              v-for="d in docs.filter((x) => x.kind === kind)"
+              :key="d.id"
+              :src="d.thumb"
+              @click="previewDoc(d)"
+            />
+          </div>
+        </template>
+        <div class="td__docs-tip">点图片放大。换手机/想带原图，用「我的 → 导出备份」（勾选包含拍照原图）。</div>
       </div>
     </div>
 
@@ -223,6 +262,32 @@ function previewThumb(dataUrl) {
 </template>
 
 <style scoped>
+.td__docs-head {
+  cursor: pointer;
+}
+.td__docs-label {
+  font-size: 12px;
+  color: #646566;
+  margin: 10px 0 6px;
+}
+.td__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.td__thumbs img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.td__docs-tip {
+  font-size: 11px;
+  color: #c8c9cc;
+  margin-top: 10px;
+  line-height: 1.6;
+}
 .td__head {
   display: flex;
   justify-content: space-between;

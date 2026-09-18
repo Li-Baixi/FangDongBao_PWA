@@ -4,8 +4,11 @@
  * 计费规则核心：房租、收租日、押金、电费模式、水费模式、网费。
  */
 import { ref, watch, computed } from 'vue'
-import { showToast, showConfirmDialog } from 'vant'
+import { showToast, showConfirmDialog, showImagePreview, showLoadingToast } from 'vant'
 import repo from '@/db/repo'
+import { db } from '@/db/dexie'
+import { uid } from '@/utils/id'
+import { compressPhoto } from '@/utils/image'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { yuanToFen } from '@/utils/money'
@@ -60,6 +63,14 @@ const showRentDayPicker = ref(false)
 const showEModePicker = ref(false)
 const showWModePicker = ref(false)
 
+// ===== 证件与合同照片（折叠区，默认收起，不挡日常编辑视线） =====
+const showDocs = ref(false)
+const docs = ref([]) // [{id, kind:'idcard'|'contract', thumb}]
+const removedIds = ref([]) // 本次删掉的旧照片（保存时清本地原图）
+const newBlobs = {} // 新加照片的原图（点保存才真正入库，中途取消不残留）
+const docInput = ref(null)
+const pickKind = ref('contract')
+
 const buildingText = computed(() => data.buildingsById[buildingId.value]?.name || '未分组')
 const eModeText = computed(() => MODE_OPTIONS.find((o) => o.value === electricMode.value)?.text || '')
 const wModeText = computed(() => MODE_OPTIONS.find((o) => o.value === waterMode.value)?.text || '')
@@ -90,6 +101,10 @@ watch(
     waterMode.value = t?.water?.mode || 'metered'
     waterPriceYuan.value = t?.water?.price ? (t.water.price / 100).toFixed(2) : ''
     waterFlatYuan.value = t?.water?.flatAmount ? (t.water.flatAmount / 100).toFixed(2) : ''
+    docs.value = ((t && t.docs) || []).map((d) => ({ ...d }))
+    removedIds.value = []
+    showDocs.value = false // 默认折叠
+    for (const k of Object.keys(newBlobs)) delete newBlobs[k]
     snapshot = fieldsSnapshot() // 记住打开时的样子，用来判断"改了没保存"
   }
 )
@@ -102,6 +117,7 @@ function fieldsSnapshot() {
     depositYuan.value, internetYuan.value, note.value,
     electricMode.value, electricPriceYuan.value, electricFlatYuan.value,
     waterMode.value, waterPriceYuan.value, waterFlatYuan.value,
+    docs.value.map((d) => d.id + ':' + d.kind).join(','),
   ])
 }
 const dirty = computed(() => fieldsSnapshot() !== snapshot)
@@ -123,6 +139,54 @@ function onCloseRequest(v) {
   emit('update:show', v)
 }
 
+// ===== 证件/合同照片操作 =====
+function docsOf(kind) {
+  return docs.value.filter((d) => d.kind === kind)
+}
+
+function pickDoc(kind) {
+  pickKind.value = kind
+  if (docInput.value) docInput.value.click()
+}
+
+async function onDocFile(e) {
+  const file = e.target.files && e.target.files[0]
+  if (!file) return
+  const loading = showLoadingToast({ message: '处理照片…', forbidClick: true, duration: 0 })
+  try {
+    const { blob, thumb } = await compressPhoto(file)
+    const id = uid()
+    newBlobs[id] = blob
+    docs.value.push({ id, kind: pickKind.value, thumb, _new: true, _localUrl: URL.createObjectURL(blob) })
+  } catch {
+    showToast('照片处理失败，请重试')
+  } finally {
+    loading.close()
+    e.target.value = ''
+  }
+}
+
+function removeDoc(d) {
+  if (d._new) {
+    if (d._localUrl) URL.revokeObjectURL(d._localUrl)
+    delete newBlobs[d.id]
+  } else {
+    removedIds.value.push(d.id)
+  }
+  docs.value = docs.value.filter((x) => x.id !== d.id)
+}
+
+async function previewDoc(d) {
+  let url = d._localUrl || d.thumb
+  try {
+    const p = await repo.getPhoto(d.id)
+    if (p && p.blob) url = URL.createObjectURL(p.blob)
+  } catch {
+    /* 本机没有原图就用同步来的缩略图 */
+  }
+  showImagePreview([url])
+}
+
 async function save() {
   if (!name.value.trim()) return showToast('请填写租客姓名')
   if (yuanToFen(rentYuan.value) <= 0) return showToast('请填写月房租')
@@ -135,8 +199,16 @@ async function save() {
     }
   }
   const t = props.tenant
+  const tid = t?.id || uid() // 新租客先生成 ID，照片才能挂上租客
+  // 证件/合同照片：新加的把原图存进本机照片库，删掉的清掉
+  for (const d of docs.value) {
+    if (d._new && newBlobs[d.id]) {
+      await repo.savePhoto({ id: d.id, ownerId: t?.ownerId || session.current?.id, tenantId: tid, blob: newBlobs[d.id] })
+    }
+  }
+  for (const rid of removedIds.value) await db.photos.delete(rid)
   await repo.saveTenant({
-    id: t?.id,
+    id: tid,
     ownerId: t?.ownerId || session.current?.id,
     buildingId: buildingId.value || null,
     name: name.value.trim(),
@@ -159,6 +231,7 @@ async function save() {
     },
     note: note.value.trim() || null,
     movedInAt: t?.movedInAt || null,
+    docs: docs.value.map(({ id, kind, thumb }) => ({ id, kind, thumb })),
   })
   emit('update:show', false)
   emit('saved')
@@ -223,7 +296,42 @@ async function save() {
         </van-field>
         <van-field v-model="note" label="备注" placeholder="选填" type="textarea" rows="1" autosize />
       </van-cell-group>
+
+      <van-cell-group inset>
+        <van-cell title="证件与合同" :value="docs.length ? `${docs.length} 张` : '选填'" is-link @click="showDocs = !showDocs">
+          <template #right-icon>
+            <van-icon :name="showDocs ? 'arrow-up' : 'arrow-down'" color="#969799" />
+          </template>
+        </van-cell>
+        <div v-if="showDocs" class="tf__docs">
+          <div class="tf__docs-label">身份证图片（正反面各拍一张）</div>
+          <div class="tf__thumbs">
+            <div v-for="d in docsOf('idcard')" :key="d.id" class="tf__thumb">
+              <img :src="d._localUrl || d.thumb" @click="previewDoc(d)" />
+              <van-icon name="clear" class="tf__thumb-del" @click.stop="removeDoc(d)" />
+            </div>
+            <div class="tf__thumb tf__thumb--add" @click="pickDoc('idcard')">
+              <van-icon name="plus" size="16" />
+              <span>添加</span>
+            </div>
+          </div>
+          <div class="tf__docs-label">合同图片（多页就多拍几张）</div>
+          <div class="tf__thumbs">
+            <div v-for="d in docsOf('contract')" :key="d.id" class="tf__thumb">
+              <img :src="d._localUrl || d.thumb" @click="previewDoc(d)" />
+              <van-icon name="clear" class="tf__thumb-del" @click.stop="removeDoc(d)" />
+            </div>
+            <div class="tf__thumb tf__thumb--add" @click="pickDoc('contract')">
+              <van-icon name="plus" size="16" />
+              <span>添加</span>
+            </div>
+          </div>
+          <div class="tf__docs-tip">原图只存这台手机（换手机前用「我的 → 导出备份」带走）；家里人看到的是同步的缩略图。</div>
+        </div>
+      </van-cell-group>
       </div>
+
+      <input ref="docInput" type="file" accept="image/*" style="display: none" @change="onDocFile" />
 
       <div class="tf__footer">
         <van-button round block type="primary" @click="save">保存</van-button>
@@ -267,5 +375,60 @@ async function save() {
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid #f5f6f7;
   background: #fff;
+}
+.tf__docs {
+  padding: 4px 16px 14px;
+}
+.tf__docs-label {
+  font-size: 12px;
+  color: #646566;
+  margin: 10px 0 6px;
+}
+.tf__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tf__thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f5f6f7;
+}
+.tf__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tf__thumb-del {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  padding: 2px;
+  font-size: 14px;
+}
+.tf__thumb--add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #969799;
+  font-size: 11px;
+  border: 1px dashed #dcdee0;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.tf__docs-tip {
+  font-size: 11px;
+  color: #c8c9cc;
+  margin-top: 10px;
+  line-height: 1.6;
 }
 </style>
