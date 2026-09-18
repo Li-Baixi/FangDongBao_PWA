@@ -15,7 +15,7 @@ where exists (select 1 from cron.job where jobname = 'rent-reminder-daily');
 
 select cron.schedule(
   'rent-reminder-daily',
-  '0 1 * * *',  -- UTC 01:00 = 北京时间 09:00
+  '0 * * * *',  -- 每小时整点跑一次；程序内部只在"当前小时 == 每位用户自选提醒时间"时才发推送
   $$
   select net.http_post(
     url := 'https://PROJECT_REF.supabase.co/functions/v1/rent-reminder',

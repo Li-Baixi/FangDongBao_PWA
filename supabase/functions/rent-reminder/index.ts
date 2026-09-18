@@ -47,30 +47,41 @@ Deno.serve(async (req) => {
   const year = now.getUTCFullYear()
   const month = now.getUTCMonth() + 1
   const day = now.getUTCDate()
+  const hour = now.getUTCHours() // 北京时间当前小时
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
   const pad = (n) => String(n).padStart(2, '0')
   const todayStr = `${year}-${pad(month)}-${pad(day)}`
   const period = `${year}-${pad(month)}`
 
   // ---- 拉数据 ----
-  const [{ data: tenants, error: e1 }, { data: bills, error: e2 }, { data: payments, error: e3 }, { data: subs, error: e4 }] =
+  const [{ data: tenants, error: e1 }, { data: bills, error: e2 }, { data: payments, error: e3 }, { data: subs, error: e4 }, { data: landlords, error: e5 }] =
     await Promise.all([
       supa.from('tenants').select('id,ownerId,name,room,rentDay,monthlyRent,internet,electric,water').eq('status', 'active').is('deletedAt', null),
       supa.from('bills').select('id,tenantId,ownerId,period,dueDate,total').is('deletedAt', null),
       supa.from('payments').select('billId,amount').is('deletedAt', null),
       supa.from('push_subscriptions').select('endpoint,landlordId,keys'),
+      supa.from('landlords').select('id,prefs').is('deletedAt', null),
     ])
-  if (e1 || e2 || e3 || e4) {
-    return new Response(`查询失败: ${e1?.message || e2?.message || e3?.message || e4?.message}`, { status: 500 })
+  if (e1 || e2 || e3 || e4 || e5) {
+    return new Response(`查询失败: ${e1?.message || e2?.message || e3?.message || e4?.message || e5?.message}`, { status: 500 })
   }
 
   const paidByBill = new Map()
   for (const p of payments ?? []) {
     paidByBill.set(p.billId, (paidByBill.get(p.billId) || 0) + (p.amount || 0))
   }
+  // 每位房东自选的提醒小时（prefs.notifyHour，默认 9 点）。
+  // 定时任务每小时跑一次，只有"当前小时 == 自己选的时间"的人才收到推送，
+  // 这样每个人可以自定义提醒时间，互不干扰。
+  const matchedOwners = new Set(
+    (landlords ?? [])
+      .filter((l) => Number(l.prefs?.notifyHour ?? 9) === hour)
+      .map((l) => l.id)
+  )
   const subsByOwner = new Map()
   for (const s of subs ?? []) {
     if (!s.landlordId || !s.keys?.p256dh || !s.keys?.auth) continue
+    if (!matchedOwners.has(s.landlordId)) continue
     if (!subsByOwner.has(s.landlordId)) subsByOwner.set(s.landlordId, [])
     subsByOwner.get(s.landlordId).push(s)
   }

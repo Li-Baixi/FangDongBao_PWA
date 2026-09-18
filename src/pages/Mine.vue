@@ -2,7 +2,7 @@
 /**
  * 我的：档案信息、楼栋管理、家庭成员（管理员）、推送提醒、备份、安装指南。
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog, showLoadingToast } from 'vant'
 import { db, getMeta } from '@/db/dexie'
@@ -116,10 +116,78 @@ const pushSupported = computed(
   () => session.isCloud && vapidPublicKey && 'serviceWorker' in navigator && 'PushManager' in window
 )
 
+// ===== 推送开关 + 提醒时间 =====
+const pushOn = ref(false)
+
+onMounted(async () => {
+  if (!pushSupported.value) return
+  try {
+    const { count } = await supabase
+      .from('push_subscriptions')
+      .select('endpoint', { count: 'exact', head: true })
+      .eq('authUid', session.cloudUser.id)
+    pushOn.value = (count ?? 0) > 0
+  } catch {
+    /* 网络问题就当关闭显示，不影响使用 */
+  }
+})
+
+async function onTogglePush(val) {
+  if (val) {
+    await enablePush()
+  } else {
+    await disablePush()
+  }
+}
+
+/** 关闭推送：清掉这个账号名下所有设备的订阅 */
+async function disablePush() {
+  try {
+    const { error } = await supabase.from('push_subscriptions').delete().eq('authUid', session.cloudUser.id)
+    if (error) throw error
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) await sub.unsubscribe()
+    } catch {
+      /* 本地退订失败无所谓，服务端记录已删 */
+    }
+    showToast('已关闭推送，随时可以再开')
+  } catch (e) {
+    pushOn.value = true
+    showToast(`关闭失败：${e.message || e}`)
+  }
+}
+
+// 提醒时间（存各自档案的 prefs.notifyHour，提醒程序按这个时间发）
+const showHourPicker = ref(false)
+const notifyHour = computed(() => Number(session.current?.prefs?.notifyHour ?? 9))
+const hourColumns = Array.from({ length: 17 }, (_, i) => {
+  const h = i + 6 // 6:00 ~ 22:00
+  const text = h < 11 ? `早上 ${h}:00` : h < 13 ? `中午 ${h}:00` : h < 18 ? `下午 ${h}:00` : `晚上 ${h}:00`
+  return { text, value: h }
+})
+const hourText = computed(() => hourColumns.find((c) => c.value === notifyHour.value)?.text || `${notifyHour.value}:00`)
+
+async function onHourConfirm({ selectedValues }) {
+  const h = selectedValues[0]
+  showHourPicker.value = false
+  try {
+    const l = session.current
+    const prefs = { ...(l.prefs || {}), notifyHour: h }
+    await repo.saveLandlord({ ...l, prefs })
+    l.prefs = prefs
+    showToast(`已设为每天 ${hourColumns.find((c) => c.value === h)?.text || h + ':00'} 提醒`)
+  } catch (e) {
+    showToast('保存失败，请重试')
+  }
+}
+
 async function enablePush() {
   try {
     const perm = await Notification.requestPermission()
     if (perm !== 'granted') {
+      pushOn.value = false
       showToast('通知权限没打开：去手机系统设置里允许本应用通知')
       return
     }
@@ -142,8 +210,10 @@ async function enablePush() {
       updatedAt: nowTs(),
     })
     loading.close()
-    showToast('提醒已开启，收租日早上会通知你')
+    pushOn.value = true
+    showToast(`提醒已开启，每天 ${hourText.value} 通知你`)
   } catch (e) {
+    pushOn.value = false
     showToast(`开启失败：${e.message || e}`)
   }
 }
@@ -381,7 +451,14 @@ async function signOut() {
     </van-cell-group>
 
     <van-cell-group inset title="提醒">
-      <van-cell title="收租推送提醒" icon="bell" is-link @click="enablePush" v-if="pushSupported" />
+      <template v-if="pushSupported">
+        <van-cell title="收租提醒推送" center label="收租日 / 逾期 / 漏建账单时弹窗通知">
+          <template #right-icon>
+            <van-switch :model-value="pushOn" size="20" @update:model-value="onTogglePush" />
+          </template>
+        </van-cell>
+        <van-cell title="提醒时间" :value="hourText" is-link @click="showHourPicker = true" />
+      </template>
       <van-cell v-else title="收租推送提醒" icon="bell" :value="session.isCloud ? '未配置' : '仅云模式'" />
       <van-cell title="怎么装到手机桌面" icon="apps-o" is-link @click="router.push({ name: 'installGuide' })" />
     </van-cell-group>
@@ -407,6 +484,17 @@ async function signOut() {
       <div class="mine__delete-entry" @click="onDeleteClick">注销账号（删除全部数据）</div>
     </div>
     <div style="height: 24px"></div>
+
+    <!-- 提醒时间选择 -->
+    <van-popup v-model:show="showHourPicker" position="bottom" round>
+      <van-picker
+        title="每天几点提醒"
+        :columns="hourColumns"
+        :default-index="Math.max(0, notifyHour - 6)"
+        @confirm="onHourConfirm"
+        @cancel="showHourPicker = false"
+      />
+    </van-popup>
 
     <!-- 识别设置弹层 -->
     <van-popup v-model:show="showAi" position="bottom" round class="mine__ai-popup">
