@@ -17,9 +17,24 @@ const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
 const MAILTO = Deno.env.get('PUSH_NOTIFY_MAILTO') ?? 'mailto:fangdongbao@example.com'
 
 Deno.serve(async (req) => {
-  // 只接受持有 service role key 的内部调用（定时任务）
+  // 只接受 service role 身份的内部调用（定时任务）。
+  // 平台层已开启 JWT 校验，能进到这里的令牌都是签名有效的；
+  // 这里再看身份：与环境服务密钥一致，或 JWT 声明 role=service_role
+  // （新版项目的环境密钥是 sb_secret_ 格式，与后台复制的旧版 JWT 原文不同，
+  //   所以不能逐字比对，要按声明判断）。
   const auth = req.headers.get('Authorization') ?? ''
-  if (auth !== `Bearer ${SERVICE_KEY}`) {
+  const token = auth.replace(/^Bearer\s+/i, '')
+  let isService = token !== '' && token === SERVICE_KEY
+  if (!isService && token.split('.').length === 3) {
+    try {
+      const p = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+      const payload = JSON.parse(atob(p + '='.repeat((4 - (p.length % 4)) % 4)))
+      isService = payload?.role === 'service_role'
+    } catch {
+      /* 解析失败按未授权处理 */
+    }
+  }
+  if (!isService) {
     return new Response('Unauthorized', { status: 401 })
   }
 
