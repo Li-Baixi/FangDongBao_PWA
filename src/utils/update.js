@@ -23,6 +23,35 @@ export async function checkUpdate() {
   return info
 }
 
+/** 版本号比较：a>b 返回 1，相等 0，a<b 返回 -1 */
+export function cmpVersion(a, b) {
+  const pa = String(a).split('.').map(Number)
+  const pb = String(b).split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const x = pa[i] || 0
+    const y = pb[i] || 0
+    if (x !== y) return x > y ? 1 : -1
+  }
+  return 0
+}
+
+/**
+ * 用户落后了哪些版本：从线上 version.json 的 history 里
+ * 挑出比当前运行版本新的，按"新 -> 旧"排序返回 [{version, note}]。
+ * 线上还是旧格式（没带 history）就退回单条最新说明，行为同从前。
+ */
+export function newerVersions(currentVersion, info) {
+  const entries = info?.history ? Object.entries(info.history) : []
+  const newer = entries
+    .filter(([v]) => cmpVersion(v, currentVersion) > 0)
+    .sort((x, y) => cmpVersion(y[0], x[0]))
+    .map(([version, note]) => ({ version, note: note || '' }))
+  if (!newer.length && info?.version && cmpVersion(info.version, currentVersion) > 0) {
+    newer.push({ version: info.version, note: info.notes || '' })
+  }
+  return newer
+}
+
 /**
  * 立即更新：让后台待命的新 Service Worker 接管，然后刷新页面。
  * 没有新 SW 待命（比如 SW 已在后台换好）就直接刷新拿最新资源。

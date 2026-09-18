@@ -26,6 +26,8 @@ function versionJsonPlugin() {
             version: pkg.version,
             buildTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }),
             notes: RELEASE_NOTES[pkg.version] || '',
+            // 带上全部历史更新说明：落后多个版本的用户一次看全跳过了什么
+            history: RELEASE_NOTES,
           },
           null,
           2

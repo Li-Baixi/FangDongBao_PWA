@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
-import { checkUpdate, applyUpdate } from '@/utils/update'
+import { checkUpdate, applyUpdate, newerVersions } from '@/utils/update'
 
 const route = useRoute()
 const session = useSessionStore()
@@ -27,11 +27,24 @@ async function tryCheckUpdate() {
     const info = await checkUpdate()
     if (info && sessionStorage.getItem('fdb-update-prompted') !== info.version) {
       sessionStorage.setItem('fdb-update-prompted', info.version)
+      // 很久没打开、落后好几个版本时：只弹一个窗，但把这期间
+      // 每个版本更新了什么都列出来（最多 3 条，更早的去更新日志看），
+      // 点一次直接升到最新，中间版本不会挨个补弹。
+      const newer = newerVersions(__APP_VERSION__, info)
+      const shown = newer.slice(0, 3)
+      const message =
+        shown.map((x) => `【v${x.version}】${x.note || '优化与修复'}`).join('\n\n') +
+        (newer.length > shown.length
+          ? `\n\n（更早还有 ${newer.length - shown.length} 个版本的更新，装好后可在「我的 → 更新日志」查看）`
+          : '')
       try {
         await showConfirmDialog({
-          title: `发现新版本 v${info.version}`,
-          message: info.notes || '性能优化与问题修复。',
-          confirmButtonText: '立即更新',
+          title:
+            newer.length > 1
+              ? `发现新版本 v${info.version}（落后 ${newer.length} 个版本）`
+              : `发现新版本 v${info.version}`,
+          message,
+          confirmButtonText: '一键更到最新',
           cancelButtonText: '稍后再说',
           confirmButtonColor: '#0f766e',
         })
