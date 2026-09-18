@@ -1,18 +1,44 @@
 import { fileURLToPath, URL } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
+import { RELEASE_NOTES } from './src/release-notes.js'
 
 // GitHub Pages 部署在 https://li-baixi.github.io/FangDongBao_PWA/ 子路径下
 const BASE = '/FangDongBao_PWA/'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
+// 构建时把版本信息写成 version.json（不进 SW 预缓存，应用内更新检查用）
+function versionJsonPlugin() {
+  return {
+    name: 'write-version-json',
+    closeBundle() {
+      const dir = fileURLToPath(new URL('./dist', import.meta.url))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(
+        join(dir, 'version.json'),
+        JSON.stringify(
+          {
+            version: pkg.version,
+            buildTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }),
+            notes: RELEASE_NOTES[pkg.version] || '',
+          },
+          null,
+          2
+        )
+      )
+    },
+  }
+}
+
 export default defineConfig({
   base: BASE,
   plugins: [
+    versionJsonPlugin(),
     vue(),
     // 把 tesseract.js 的离线识别资源复制到 dist/ocr/（自托管，不依赖 CDN）
     viteStaticCopy({

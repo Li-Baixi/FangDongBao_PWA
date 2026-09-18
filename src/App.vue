@@ -1,8 +1,10 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
+import { showConfirmDialog } from 'vant'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
+import { checkUpdate, applyUpdate } from '@/utils/update'
 
 const route = useRoute()
 const session = useSessionStore()
@@ -11,6 +13,53 @@ data.bind()
 
 const active = ref(0)
 const showTabbar = computed(() => Boolean(route.meta.tab))
+
+// ===== 应用内更新检查 =====
+// 启动时和每次回到前台（间隔 >10 分钟）检查 version.json，发现新版本弹窗提示。
+// 同一个版本一次会话只提示一次，用户点了「稍后」就不再烦人。
+let lastCheck = 0
+let checking = false
+
+async function tryCheckUpdate() {
+  if (checking) return
+  checking = true
+  try {
+    const info = await checkUpdate()
+    if (info && sessionStorage.getItem('fdb-update-prompted') !== info.version) {
+      sessionStorage.setItem('fdb-update-prompted', info.version)
+      try {
+        await showConfirmDialog({
+          title: `发现新版本 v${info.version}`,
+          message: info.notes || '性能优化与问题修复。',
+          confirmButtonText: '立即更新',
+          cancelButtonText: '稍后再说',
+          confirmButtonColor: '#0f766e',
+        })
+        await applyUpdate()
+      } catch {
+        /* 用户点「稍后」，下次打开发版还会提示 */
+      }
+    }
+  } finally {
+    checking = false
+    lastCheck = Date.now()
+  }
+}
+
+function onVisibility() {
+  if (document.visibilityState === 'visible' && Date.now() - lastCheck > 10 * 60 * 1000) {
+    tryCheckUpdate()
+  }
+}
+
+onMounted(() => {
+  // 等首次加载稳定后再查，避免和启动抢资源
+  setTimeout(tryCheckUpdate, 3000)
+  document.addEventListener('visibilitychange', onVisibility)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibility)
+})
 </script>
 
 <template>

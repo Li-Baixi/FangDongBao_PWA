@@ -13,6 +13,11 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response'
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
 
+// 应用内更新：页面发来 SKIP_WAITING 就立刻接管（配合刷新拿最新版本）
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
+})
+
 const BASE = self.registration.scope
 
 // OCR 资源（wasm/字库，首次使用后离线可用）

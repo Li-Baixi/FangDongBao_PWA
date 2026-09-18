@@ -12,6 +12,7 @@ import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { dataUrlToBlob } from '@/utils/image'
 import { AI_PRESETS, setAiConfig, testAiConfig } from '@/utils/aiocr'
+import { RELEASE_NOTES } from '@/release-notes.js'
 import { urlBase64ToUint8Array } from '@/utils/push'
 import { uid, nowTs } from '@/utils/id'
 
@@ -115,6 +116,9 @@ async function onFinalConfirm() {
 const pushSupported = computed(
   () => session.isCloud && vapidPublicKey && 'serviceWorker' in navigator && 'PushManager' in window
 )
+
+// ===== 更新日志 =====
+const showChangelog = ref(false)
 
 // ===== 推送开关 + 提醒时间 =====
 const pushOn = ref(false)
@@ -476,6 +480,7 @@ async function signOut() {
 
     <van-cell-group inset title="关于">
       <van-cell title="版本" :value="`v${version}（${buildTime}）`" @click="onTapVersion" />
+      <van-cell title="更新日志" icon="notes-o" is-link @click="showChangelog = true" />
       <van-cell title="使用说明" icon="question-o" is-link @click="router.push({ name: 'installGuide' })" />
     </van-cell-group>
 
@@ -484,6 +489,22 @@ async function signOut() {
       <div class="mine__delete-entry" @click="onDeleteClick">注销账号（删除全部数据）</div>
     </div>
     <div style="height: 24px"></div>
+
+    <!-- 更新日志 -->
+    <van-popup v-model:show="showChangelog" position="bottom" round class="mine__ai-popup">
+      <div class="mine__ai">
+        <div class="mine__ai-title">更新日志</div>
+        <div class="mine__changelog">
+          <div v-for="(note, ver) in RELEASE_NOTES" :key="ver" class="mine__cl-item">
+            <div class="mine__cl-ver">
+              v{{ ver }}
+              <span v-if="ver === version" class="fdb-tag fdb-tag--paid">当前版本</span>
+            </div>
+            <div class="mine__cl-note">{{ note }}</div>
+          </div>
+        </div>
+      </div>
+    </van-popup>
 
     <!-- 提醒时间选择 -->
     <van-popup v-model:show="showHourPicker" position="bottom" round>
@@ -608,6 +629,32 @@ async function signOut() {
   font-size: 11px;
   color: #c8c9cc;
   text-align: center;
+  line-height: 1.7;
+}
+.mine__changelog {
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 0 16px 10px;
+}
+.mine__cl-item {
+  padding: 10px 0;
+  border-bottom: 1px solid #f5f6f7;
+}
+.mine__cl-item:last-child {
+  border-bottom: none;
+}
+.mine__cl-ver {
+  font-size: 14px;
+  font-weight: 600;
+  color: #323233;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mine__cl-note {
+  font-size: 12px;
+  color: #646566;
+  margin-top: 4px;
   line-height: 1.7;
 }
 .mine__delete-entry {
