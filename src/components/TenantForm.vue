@@ -90,8 +90,38 @@ watch(
     waterMode.value = t?.water?.mode || 'metered'
     waterPriceYuan.value = t?.water?.price ? (t.water.price / 100).toFixed(2) : ''
     waterFlatYuan.value = t?.water?.flatAmount ? (t.water.flatAmount / 100).toFixed(2) : ''
+    snapshot = fieldsSnapshot() // 记住打开时的样子，用来判断"改了没保存"
   }
 )
+
+// ===== 未保存保护 =====
+let snapshot = ''
+function fieldsSnapshot() {
+  return JSON.stringify([
+    name.value, phone.value, room.value, buildingId.value, rentYuan.value, rentDay.value,
+    depositYuan.value, internetYuan.value, note.value,
+    electricMode.value, electricPriceYuan.value, electricFlatYuan.value,
+    waterMode.value, waterPriceYuan.value, waterFlatYuan.value,
+  ])
+}
+const dirty = computed(() => fieldsSnapshot() !== snapshot)
+
+/** 关闭弹窗前检查：有改动没保存就拦一道，防止手滑白改 */
+function onCloseRequest(v) {
+  if (!v && dirty.value) {
+    showConfirmDialog({
+      title: '有未保存的修改',
+      message: '刚改的信息还没保存，确定退出吗？',
+      confirmButtonText: '不保存退出',
+      cancelButtonText: '继续编辑',
+      confirmButtonColor: '#ee0a24',
+    })
+      .then(() => emit('update:show', false))
+      .catch(() => {})
+    return
+  }
+  emit('update:show', v)
+}
 
 async function save() {
   if (!name.value.trim()) return showToast('请填写租客姓名')
@@ -137,9 +167,10 @@ async function save() {
 </script>
 
 <template>
-  <van-popup :show="show" position="bottom" round style="height: 88%" @update:show="(v) => emit('update:show', v)">
+  <van-popup :show="show" position="bottom" round style="height: 88%" @update:show="onCloseRequest">
     <div class="tf">
       <div class="tf__title">{{ tenant ? '编辑租客' : '添加租客' }}</div>
+      <div class="tf__body">
 
       <van-cell-group inset>
         <van-field v-model="name" label="姓名" placeholder="租客怎么称呼" required />
@@ -192,8 +223,9 @@ async function save() {
         </van-field>
         <van-field v-model="note" label="备注" placeholder="选填" type="textarea" rows="1" autosize />
       </van-cell-group>
+      </div>
 
-      <div style="padding: 16px">
+      <div class="tf__footer">
         <van-button round block type="primary" @click="save">保存</van-button>
       </div>
 
@@ -216,13 +248,24 @@ async function save() {
 <style scoped>
 .tf {
   height: 100%;
-  overflow-y: auto;
-  padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .tf__title {
   text-align: center;
   font-size: 16px;
   font-weight: 600;
   padding: 14px 0 6px;
+}
+.tf__body {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+.tf__footer {
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid #f5f6f7;
+  background: #fff;
 }
 </style>
