@@ -53,7 +53,11 @@ create table if not exists public.tenants (
 );
 
 -- ---------- 抄表记录（thumb 为照片缩略图 dataURL，原图只存手机本地） ----------
-create table if not exists public.meterReadings (
+-- 注意：meterReadings 是混合大小写表名，必须带双引号，否则 Postgres 会转成
+-- 全小写 meterreadings 建表，后面的权限语句和前端 .from('meterReadings') 就都找不到了。
+-- 下面这句清掉早期不带引号误建的小写表（全新项目没有数据，安全）。
+drop table if exists public.meterreadings cascade;
+create table if not exists public."meterReadings" (
   "id" uuid primary key,
   "ownerId" uuid not null,
   "tenantId" uuid not null,
@@ -117,8 +121,8 @@ create table if not exists public.push_subscriptions (
 create index if not exists idx_buildings_sync on public.buildings ("updatedAt");
 create index if not exists idx_tenants_sync on public.tenants ("updatedAt");
 create index if not exists idx_tenants_owner on public.tenants ("ownerId") where "deletedAt" is null;
-create index if not exists idx_readings_sync on public.meterReadings ("updatedAt");
-create index if not exists idx_readings_tenant on public.meterReadings ("tenantId", "utility");
+create index if not exists idx_readings_sync on public."meterReadings" ("updatedAt");
+create index if not exists idx_readings_tenant on public."meterReadings" ("tenantId", "utility");
 create index if not exists idx_bills_sync on public.bills ("updatedAt");
 create index if not exists idx_bills_tenant_period on public.bills ("tenantId", "period");
 create index if not exists idx_bills_period on public.bills ("period") where "deletedAt" is null;
@@ -194,12 +198,17 @@ create trigger trg_guard_landlord_role
 alter table public.landlords enable row level security;
 alter table public.buildings enable row level security;
 alter table public.tenants enable row level security;
-alter table public.meterReadings enable row level security;
+alter table public."meterReadings" enable row level security;
 alter table public.bills enable row level security;
 alter table public.payments enable row level security;
 alter table public.push_subscriptions enable row level security;
 
 -- landlords：都能看（首页要显示名字），只能改自己的（管理员可改全部）
+-- （drop if exists 让整段脚本可以反复运行不出错）
+drop policy if exists "landlords_select" on public.landlords;
+drop policy if exists "landlords_insert" on public.landlords;
+drop policy if exists "landlords_update" on public.landlords;
+drop policy if exists "landlords_delete" on public.landlords;
 create policy "landlords_select" on public.landlords for select to authenticated using (true);
 create policy "landlords_insert" on public.landlords for insert to authenticated with check ("authUid" = auth.uid());
 create policy "landlords_update" on public.landlords for update to authenticated using ("authUid" = auth.uid() or public.is_admin());
@@ -212,6 +221,10 @@ declare
 begin
   foreach t in array array['buildings', 'tenants', 'meterReadings', 'bills', 'payments']
   loop
+    execute format('drop policy if exists "%s_select" on public.%I;', t, t);
+    execute format('drop policy if exists "%s_insert" on public.%I;', t, t);
+    execute format('drop policy if exists "%s_update" on public.%I;', t, t);
+    execute format('drop policy if exists "%s_delete" on public.%I;', t, t);
     execute format('create policy "%s_select" on public.%I for select to authenticated using (public.is_my_data("ownerId") or public.is_admin());', t, t);
     execute format('create policy "%s_insert" on public.%I for insert to authenticated with check (public.is_my_data("ownerId") or public.is_admin());', t, t);
     execute format('create policy "%s_update" on public.%I for update to authenticated using (public.is_my_data("ownerId") or public.is_admin());', t, t);
@@ -221,6 +234,10 @@ end;
 $$;
 
 -- 推送订阅：每人只管自己的
+drop policy if exists "push_select" on public.push_subscriptions;
+drop policy if exists "push_insert" on public.push_subscriptions;
+drop policy if exists "push_update" on public.push_subscriptions;
+drop policy if exists "push_delete" on public.push_subscriptions;
 create policy "push_select" on public.push_subscriptions for select to authenticated using ("authUid" = auth.uid());
 create policy "push_insert" on public.push_subscriptions for insert to authenticated with check ("authUid" = auth.uid());
 create policy "push_update" on public.push_subscriptions for update to authenticated using ("authUid" = auth.uid());
