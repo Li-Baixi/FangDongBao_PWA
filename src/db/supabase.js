@@ -20,4 +20,7 @@ export const supabase = cloudEnabled
 export const SYNC_TABLES = ['landlords', 'buildings', 'tenants', 'meterReadings', 'bills', 'payments']
 
 /** Web Push 的 VAPID 公钥（服务端持有私钥），未配置则推送按钮隐藏 */
-export const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || ''
+// VAPID 公钥本身就是要发给每个浏览器端公开使用的信息（等同网址），写死默认值，
+// 避免依赖 GitHub Secrets 导致构建缺钥匙。私钥只在 Supabase 服务端，绝不出现在这里。
+export const vapidPublicKey =
+  import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BKETsAym3zsy6CbZkpDRK50JafEJR9YzpkY4vPwJDL838QN22sbBoRy3wqZVyZ0LV5I6bUdYD7pCl2g10OBZILU'
