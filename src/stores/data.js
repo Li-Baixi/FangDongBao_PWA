@@ -6,7 +6,7 @@ import { today, periodOf, monthDays } from '@/utils/dates'
 
 /**
  * 内存数据缓存：repo 任何写入都会自动触发 reload。
- * 家庭数据量级（每年几百条），全量进内存最简单可靠。
+ * 本应用数据量级（每年几百条），全量进内存最简单可靠。
  */
 let bound = false
 

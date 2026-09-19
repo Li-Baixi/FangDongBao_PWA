@@ -9,7 +9,7 @@ import { uid, nowTs } from '@/utils/id'
  * 会话：当前用谁的档案在看数据。
  * - 本地模式：应用内多档案（可选 PIN 密码），第一个创建的档案即管理员。
  * - 云模式：邮箱密码登录 Supabase，每人一个账号；第一个注册的自动成为管理员。
- * viewing：管理员可切换查看范围 —— 'self' 自己 / 'all' 全家 / 某位成员的 landlordId。
+ * viewing：管理员可切换查看范围 —— 'self' 自己 / 'all' 全部 / 某位用户的 landlordId。
  */
 export const useSessionStore = defineStore('session', {
   state: () => ({

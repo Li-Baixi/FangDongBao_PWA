@@ -69,7 +69,7 @@ const monthStat = computed(() => {
   return { receivable, received, unpaid: receivable - received, count }
 })
 
-// 查看范围切换（管理员）：我的 / 全部 / 各成员
+// 查看范围切换（管理员）：我的 / 全部 / 各用户
 const viewingOptions = computed(() => {
   if (!session.isAdmin) return []
   const opts = [{ text: `我的（${session.current?.name || ''}）`, value: 'self' }, { text: '全部', value: 'all' }]

@@ -62,7 +62,7 @@ async function softDelete(table, id) {
   await persist(table, { ...rec, deletedAt: nowTs() })
 }
 
-// ============ 房东档案（家庭成员） ============
+// ============ 房东档案（用户） ============
 
 export async function listLandlords() {
   const rows = await db.landlords.toArray()

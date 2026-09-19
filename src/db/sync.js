@@ -4,7 +4,7 @@ import { supabase, cloudEnabled, SYNC_TABLES } from './supabase'
 /**
  * 云同步引擎（仅 cloud 模式启用）。
  * 策略：本地优先写入 + 后台推送（outbox 队列）+ 增量拉取（updatedAt 游标）。
- * 冲突按 updatedAt "新者胜"（家庭场景足够，避免复杂的冲突合并）。
+ * 冲突按 updatedAt "新者胜"（本应用场景足够，避免复杂的冲突合并）。
  * 删除走软删除（deletedAt），不会因同步误删历史。
  */
 

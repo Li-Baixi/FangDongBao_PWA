@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 我的：档案信息、楼栋管理、家庭成员（管理员）、推送提醒、备份、安装指南。
+ * 我的：档案信息、楼栋管理、用户管理（管理员）、推送提醒、备份、安装指南。
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'

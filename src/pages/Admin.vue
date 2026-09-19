@@ -1,7 +1,7 @@
 <script setup>
 /**
- * 家庭成员管理（仅管理员）：
- * - 查看每位成员的数据量，快速切换查看范围
+ * 用户管理（仅管理员）：
+ * - 查看每位用户的数据量，快速切换查看范围
  * - 改名、设置/取消管理员（云模式）、档案密码（本地模式）
  */
 import { ref, computed } from 'vue'
@@ -42,7 +42,7 @@ async function doRename() {
 async function toggleRole(l) {
   if (!session.isAdmin) return
   const to = l.role === 'admin' ? 'member' : 'admin'
-  // 安全闸：不能取消最后一个管理员，否则全家没人能管理
+  // 安全闸：不能取消最后一个管理员，否则没人能管理
   if (to === 'member' && list.value.filter((x) => x.role === 'admin').length <= 1) {
     showToast('这是最后一位管理员，不能取消（先设别人为管理员）')
     return
@@ -50,7 +50,7 @@ async function toggleRole(l) {
   try {
     await showConfirmDialog({
       title: to === 'admin' ? `把 ${l.name} 设为管理员？` : `取消 ${l.name} 的管理员？`,
-      message: '管理员能看到并编辑全家所有人的数据。',
+      message: '管理员能看到并编辑所有用户的数据。',
     })
   } catch {
     return
@@ -86,11 +86,11 @@ async function doPin() {
 
 <template>
   <div class="fdb-page" v-if="session.isAdmin">
-    <van-nav-bar title="家庭成员" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="用户管理" left-arrow @click-left="router.back()" />
 
     <div class="fdb-card">
       <div class="fdb-card-title">
-        <span>全家的档案（{{ list.length }} 人）</span>
+        <span>全部用户（{{ list.length }} 人）</span>
       </div>
       <div class="adm__row" v-for="l in list" :key="l.id">
         <div class="adm__main">
@@ -110,7 +110,7 @@ async function doPin() {
         </div>
       </div>
       <div class="adm__tip">
-        首页右上角可以随时切换"看我自己 / 看全家 / 看某个人"的数据。
+        首页右上角可以随时切换"看我自己 / 看全部 / 看某位用户"的数据。
       </div>
     </div>
 
@@ -122,7 +122,7 @@ async function doPin() {
     </van-dialog>
   </div>
   <div class="fdb-page" v-else>
-    <van-nav-bar title="家庭成员" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="用户管理" left-arrow @click-left="router.back()" />
     <div class="fdb-empty">只有管理员能进入这里</div>
   </div>
 </template>

@@ -61,7 +61,7 @@ const tab = ref('android')
     </div>
 
     <div class="fdb-card">
-      <div class="fdb-card-title"><span>日常怎么用（给家人的三句话）</span></div>
+      <div class="fdb-card-title"><span>日常怎么用（给用户的三句话）</span></div>
       <div class="guide__usage">
         <p>1️⃣ 到收租日，打开房东宝，首页会显示"今天该收租"的人，点「去收租」。</p>
         <p>2️⃣ 拍电表水表照片、看表输入数字，账单自动算好，核对一下点确认。</p>

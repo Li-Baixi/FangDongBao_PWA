@@ -1,5 +1,5 @@
 <script setup>
-/** 楼栋管理：增删改名（家庭每人一般一栋，够用就好） */
+/** 楼栋管理：增删改名（每个用户一般一栋，够用就好） */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'

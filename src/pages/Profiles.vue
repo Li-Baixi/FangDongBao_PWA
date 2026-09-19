@@ -93,13 +93,13 @@ async function submit() {
   <div class="fdb-page profiles">
     <div class="profiles__hero">
       <div class="profiles__logo">房东宝</div>
-      <div class="profiles__sub">家庭收租，一本清账</div>
+      <div class="profiles__sub">收租记账，一本清账</div>
     </div>
 
     <!-- 云模式：邮箱登录 -->
     <div v-if="isCloud" class="fdb-card">
       <template v-if="!isRegister">
-        <van-field v-model="email" type="email" label="邮箱" placeholder="家人各自的账号" />
+        <van-field v-model="email" type="email" label="邮箱" placeholder="用户各自的账号" />
         <van-field v-model="password" type="password" label="密码" placeholder="输入密码" />
         <div style="margin-top: 14px">
           <van-button round block type="primary" @click="submit">登录</van-button>
@@ -144,7 +144,7 @@ async function submit() {
 
       <div class="fdb-card">
         <van-button round block type="primary" plain @click="showCreate = true">+ 新建档案</van-button>
-        <div class="profiles__tip">提示：第一个创建的档案是管理员，可以查看全家数据。</div>
+        <div class="profiles__tip">提示：第一个创建的档案是管理员，可以查看全部用户的数据。</div>
       </div>
 
       <!-- 新建档案 -->
