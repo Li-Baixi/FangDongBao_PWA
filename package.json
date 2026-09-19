@@ -1,7 +1,7 @@
 {
   "name": "fangdongbao-pwa",
   "private": true,
-  "version": "0.9.7",
+  "version": "0.9.8",
   "type": "module",
   "description": "房东宝 - 家庭房屋收租管理 PWA",
   "scripts": {

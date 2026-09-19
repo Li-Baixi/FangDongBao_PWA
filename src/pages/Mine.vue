@@ -201,6 +201,41 @@ async function onHourConfirm({ selectedValues }) {
   }
 }
 
+// 水电费默认单价（存各自档案的 prefs；新增租客时自动预填单价栏）
+const showUtilDefaults = ref(false)
+const utilElecYuan = ref('')
+const utilWaterYuan = ref('')
+const utilDefaultsText = computed(() => {
+  const p = session.current?.prefs || {}
+  if (!p.electricPrice && !p.waterPrice) return '未设置'
+  const e = p.electricPrice ? `电 ${(p.electricPrice / 100).toFixed(2)}元/度` : ''
+  const w = p.waterPrice ? `水 ${(p.waterPrice / 100).toFixed(2)}元/吨` : ''
+  return [e, w].filter(Boolean).join(' · ')
+})
+function openUtilDefaults() {
+  const p = session.current?.prefs || {}
+  utilElecYuan.value = p.electricPrice ? (p.electricPrice / 100).toFixed(2) : ''
+  utilWaterYuan.value = p.waterPrice ? (p.waterPrice / 100).toFixed(2) : ''
+  showUtilDefaults.value = true
+}
+async function saveUtilDefaults() {
+  try {
+    const l = session.current
+    const prefs = { ...(l.prefs || {}) }
+    const e = Number(utilElecYuan.value)
+    const w = Number(utilWaterYuan.value)
+    if (utilElecYuan.value.trim() !== '' && Number.isFinite(e) && e > 0) prefs.electricPrice = Math.round(e * 100)
+    else delete prefs.electricPrice
+    if (utilWaterYuan.value.trim() !== '' && Number.isFinite(w) && w > 0) prefs.waterPrice = Math.round(w * 100)
+    else delete prefs.waterPrice
+    await repo.saveLandlord({ ...l, prefs })
+    l.prefs = prefs
+    showToast('已保存，新增租客时会自动填上')
+  } catch (e) {
+    showToast('保存失败，请重试')
+  }
+}
+
 async function enablePush() {
   try {
     const perm = await Notification.requestPermission()
@@ -384,6 +419,13 @@ async function signOut() {
     <van-cell-group inset title="日常">
       <van-cell title="楼栋管理" icon="shop-o" is-link @click="router.push({ name: 'buildings' })" />
       <van-cell
+        title="水电费默认单价"
+        icon="gold-coin-o"
+        is-link
+        :value="utilDefaultsText"
+        @click="openUtilDefaults"
+      />
+      <van-cell
         v-if="showAdminEntry && session.isAdmin"
         title="平台管理"
         icon="setting-o"
@@ -454,6 +496,19 @@ async function signOut() {
         @cancel="showHourPicker = false"
       />
     </van-popup>
+
+    <!-- 水电费默认单价 -->
+    <van-dialog
+      v-model:show="showUtilDefaults"
+      title="水电费默认单价"
+      show-cancel-button
+      confirm-button-text="保存"
+      @confirm="saveUtilDefaults"
+    >
+      <van-field v-model="utilElecYuan" type="number" label="电费" placeholder="元/度，如 1.2" />
+      <van-field v-model="utilWaterYuan" type="number" label="水费" placeholder="元/吨，如 4" />
+      <div class="mine__util-tip">留空 = 不设默认。设置后新增租客时单价栏自动填上；已存在的租客不受影响，各租客仍可单独改。</div>
+    </van-dialog>
 
     <!-- 注销第一步：警告 -->
     <van-dialog
@@ -584,5 +639,11 @@ async function signOut() {
   font-size: 12px;
   color: #969799;
   margin-top: 3px;
+}
+.mine__util-tip {
+  font-size: 11px;
+  color: #969799;
+  padding: 8px 16px 12px;
+  line-height: 1.6;
 }
 </style>

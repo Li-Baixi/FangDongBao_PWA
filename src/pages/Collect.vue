@@ -50,7 +50,7 @@ const existingTotalPaid = ref(0)
 // 收款
 const payMode = ref('full') // full | partial | none
 const payAmountYuan = ref('')
-const payMethod = ref('现金')
+const payMethod = ref('微信')
 const payDate = ref(today())
 const methodOptions = ['现金', '微信', '支付宝', '银行转账']
 
@@ -103,14 +103,21 @@ async function loadTenantState() {
     m.photoId = null
     m.thumb = null
     m.readingId = null
-    // 上次读数：优先取本期账单里记录的 prev，否则取最新一次读数
+    // 上次读数（三层兜底，次月收租自动带出上月数据）：
+    // ① 本期账单里记录的 prev ② 最新一次抄表记录 ③ 往期账单里最近一次"本次读数"
+    //（③专治本地没存抄表记录但账单在的情况：云端来的、备份恢复的都能兜住）
     const billItem = bill?.items?.find((i) => i.type === util)
     if (billItem?.detail?.prev != null) {
       m.prev = String(billItem.detail.prev)
     } else if (latest[util]) {
       m.prev = String(latest[util].value)
     } else {
-      m.prev = ''
+      const priorCur = data.bills
+        .filter((b) => b.tenantId === t.id && !b.deletedAt && b.period < period.value)
+        .sort((a, b) => (a.period < b.period ? 1 : -1))
+        .map((b) => b.items?.find((i) => i.type === util)?.detail?.cur)
+        .find((v) => v != null)
+      m.prev = priorCur != null ? String(priorCur) : ''
     }
     // 编辑模式：带出本期已有读数与照片
     if (bill) {

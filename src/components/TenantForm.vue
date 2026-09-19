@@ -101,6 +101,12 @@ watch(
     waterMode.value = t?.water?.mode || 'metered'
     waterPriceYuan.value = t?.water?.price ? (t.water.price / 100).toFixed(2) : ''
     waterFlatYuan.value = t?.water?.flatAmount ? (t.water.flatAmount / 100).toFixed(2) : ''
+    if (!t) {
+      // 新增租客：预填「我的 → 水电费默认单价」（没设置就保持空白，各租客仍可单独改）
+      const p = session.current?.prefs || {}
+      if (p.electricPrice) electricPriceYuan.value = (p.electricPrice / 100).toFixed(2)
+      if (p.waterPrice) waterPriceYuan.value = (p.waterPrice / 100).toFixed(2)
+    }
     docs.value = ((t && t.docs) || []).map((d) => ({ ...d }))
     removedIds.value = []
     showDocs.value = false // 默认折叠
