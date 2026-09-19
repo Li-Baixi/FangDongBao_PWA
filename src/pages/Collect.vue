@@ -405,7 +405,7 @@ onMounted(() => {
     <!-- ===== 抄表 ===== -->
     <template v-else-if="phase === 'meter'">
       <van-nav-bar :title="`收租 · ${tenant.name}`" left-arrow @click-left="router.back()" />
-      <van-steps :active="meterIndex" active-color="#0f766e">
+      <van-steps :active="meterIndex" active-color="#6d28d9">
         <van-step v-for="u in meterQueue" :key="u">{{ UTIL_NAME[u] }}</van-step>
         <van-step>账单</van-step>
         <van-step>收款</van-step>

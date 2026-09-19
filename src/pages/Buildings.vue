@@ -60,7 +60,7 @@ async function remove(b) {
   <div class="fdb-page">
     <van-nav-bar title="楼栋管理" left-arrow @click-left="router.back()">
       <template #right>
-        <van-icon name="plus" size="20" color="#0f766e" @click="openNew" />
+        <van-icon name="plus" size="20" color="#6d28d9" @click="openNew" />
       </template>
     </van-nav-bar>
 

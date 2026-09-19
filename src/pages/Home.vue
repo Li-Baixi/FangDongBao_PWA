@@ -173,7 +173,7 @@ function onUpcomingClick(u) {
       <!-- 今日待收 -->
       <div class="fdb-card" v-if="dueToday.length">
         <div class="fdb-card-title">
-          <span><van-icon name="clock-o" color="#0f766e" /> 今天该收租</span>
+          <span><van-icon name="clock-o" color="#6d28d9" /> 今天该收租</span>
         </div>
         <div class="home__row" v-for="d in dueToday" :key="d.tenant.id" @click="goCollect(d.tenant.id)">
           <div class="home__row-main">
@@ -232,7 +232,7 @@ function onUpcomingClick(u) {
         <van-progress
           v-if="monthStat.receivable > 0"
           :percentage="Math.min(100, Math.round((monthStat.received / monthStat.receivable) * 100))"
-          color="#0f766e"
+          color="#6d28d9"
           stroke-width="8"
           style="margin-top: 12px"
         />

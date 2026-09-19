@@ -100,7 +100,7 @@ function utilSummary(t) {
   <div class="fdb-page tenants">
     <van-nav-bar title="租客">
       <template #right>
-        <van-icon name="plus" size="20" color="#0f766e" @click="showForm = true" />
+        <van-icon name="plus" size="20" color="#6d28d9" @click="showForm = true" />
       </template>
     </van-nav-bar>
 

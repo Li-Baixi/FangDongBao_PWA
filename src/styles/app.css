@@ -1,7 +1,7 @@
 /* ===== 房东宝 全局样式 ===== */
 
 :root {
-  --fdb-primary: #0f766e; /* 主色：沉稳的青绿色，代表"收钱/账本"的安心感 */
+  --fdb-primary: #6d28d9; /* 主色：沉稳的紫色，只此一处定义，全应用跟随 */
   --fdb-bg: #f6f7f8;
   --fdb-card: #ffffff;
   --fdb-danger: #ee0a24;

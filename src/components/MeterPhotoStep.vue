@@ -180,7 +180,7 @@ async function onFile(e) {
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
-  color: #0f766e;
+  color: #6d28d9;
 }
 .meter__calc b {
   font-size: 16px;

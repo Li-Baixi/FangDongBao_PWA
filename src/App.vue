@@ -46,7 +46,7 @@ async function tryCheckUpdate() {
           message,
           confirmButtonText: '一键更到最新',
           cancelButtonText: '稍后再说',
-          confirmButtonColor: '#0f766e',
+          confirmButtonColor: '#6d28d9',
         })
         await applyUpdate()
       } catch {
@@ -76,7 +76,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <van-config-provider :theme-vars="{ primaryColor: '#0f766e' }">
+  <van-config-provider :theme-vars="{ primaryColor: '#6d28d9' }">
     <router-view v-if="session.ready" />
     <div v-else class="fdb-launch">
       <div class="fdb-launch__logo">房东宝</div>

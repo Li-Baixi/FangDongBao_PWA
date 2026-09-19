@@ -325,7 +325,7 @@ function previewThumb(dataUrl) {
 .td__tag {
   font-size: 11px;
   background: #f0faf8;
-  color: #0f766e;
+  color: #6d28d9;
   border-radius: 4px;
   padding: 3px 6px;
 }
