@@ -1,5 +1,6 @@
 // 房东宝收租提醒（Supabase Edge Function，Deno 运行时）
-// 每天 09:00（北京时间）由 pg_cron 触发：
+// pg_cron 每分钟触发一次；程序先做"便宜检查"，
+// 只有到了某位房东自选的提醒时间（几点几分）才真正拉账干活：
 //   1) 今天是收租日且本期没收齐 -> 提醒房东
 //   2) 逾期未清且间隔 2 天 -> 提醒房东
 // 部署：supabase functions deploy rent-reminder
@@ -48,38 +49,62 @@ Deno.serve(async (req) => {
   const month = now.getUTCMonth() + 1
   const day = now.getUTCDate()
   const hour = now.getUTCHours() // 北京时间当前小时
+  const minute = now.getUTCMinutes() // 北京时间当前分钟
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
   const pad = (n) => String(n).padStart(2, '0')
   const todayStr = `${year}-${pad(month)}-${pad(day)}`
   const period = `${year}-${pad(month)}`
 
-  // ---- 拉数据 ----
-  const [{ data: tenants, error: e1 }, { data: bills, error: e2 }, { data: payments, error: e3 }, { data: subs, error: e4 }, { data: landlords, error: e5 }] =
+  // ---- 第一步（便宜检查）：这一分钟有没有人的自选提醒时间到了 ----
+  // 闹钟每分钟叫醒本程序一次；没到点就直接返回，不碰账单等大表
+  const force = new URL(req.url).searchParams.get('force') === '1'
+  const { data: landlords, error: e5 } = await supa
+    .from('landlords')
+    .select('id,prefs')
+    .is('deletedAt', null)
+  if (e5) {
+    return new Response(`查询失败: ${e5.message}`, { status: 500 })
+  }
+  // 每位房东自选的提醒时间（prefs.notifyHour/notifyMinute，默认 9:00）。
+  // 只有"现在 == 自己选的几点几分"的人才收到推送，人人各选各的、互不干扰。
+  // ?force=1（仅服务密钥可调）跳过时间过滤，用于手动测试推送。
+  const matchedOwners = new Set(
+    (landlords ?? [])
+      .filter((l) =>
+        force ||
+        (Number(l.prefs?.notifyHour ?? 9) === hour &&
+          Number(l.prefs?.notifyMinute ?? 0) === minute)
+      )
+      .map((l) => l.id)
+  )
+  if (matchedOwners.size === 0) {
+    // 谁的点都没到：整点留一笔"心跳"痕（证明闹钟在自动跑），其余分钟静默返回
+    if (minute === 0) {
+      try {
+        await supa.from('push_log').insert({ hour, minute, sent: 0, detail: [] })
+      } catch { /* 留痕失败不影响 */ }
+    }
+    return new Response(JSON.stringify({ ok: true, sent: 0, idle: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  // ---- 第二步：到点了，才拉账单等大表干活 ----
+  const [{ data: tenants, error: e1 }, { data: bills, error: e2 }, { data: payments, error: e3 }, { data: subs, error: e4 }] =
     await Promise.all([
       supa.from('tenants').select('id,ownerId,name,room,rentDay,monthlyRent,internet,electric,water').eq('status', 'active').is('deletedAt', null),
       supa.from('bills').select('id,tenantId,ownerId,period,dueDate,total').is('deletedAt', null),
       supa.from('payments').select('billId,amount').is('deletedAt', null),
       supa.from('push_subscriptions').select('endpoint,landlordId,keys'),
-      supa.from('landlords').select('id,prefs').is('deletedAt', null),
     ])
-  if (e1 || e2 || e3 || e4 || e5) {
-    return new Response(`查询失败: ${e1?.message || e2?.message || e3?.message || e4?.message || e5?.message}`, { status: 500 })
+  if (e1 || e2 || e3 || e4) {
+    return new Response(`查询失败: ${e1?.message || e2?.message || e3?.message || e4?.message}`, { status: 500 })
   }
 
   const paidByBill = new Map()
   for (const p of payments ?? []) {
     paidByBill.set(p.billId, (paidByBill.get(p.billId) || 0) + (p.amount || 0))
   }
-  // 每位房东自选的提醒小时（prefs.notifyHour，默认 9 点）。
-  // 定时任务每小时跑一次，只有"当前小时 == 自己选的时间"的人才收到推送，
-  // 这样每个人可以自定义提醒时间，互不干扰。
-  // ?force=1（仅服务密钥可调）跳过时间过滤，用于手动测试推送。
-  const force = new URL(req.url).searchParams.get('force') === '1'
-  const matchedOwners = new Set(
-    (landlords ?? [])
-      .filter((l) => force || Number(l.prefs?.notifyHour ?? 9) === hour)
-      .map((l) => l.id)
-  )
   const subsByOwner = new Map()
   for (const s of subs ?? []) {
     if (!s.landlordId || !s.keys?.p256dh || !s.keys?.auth) continue
@@ -155,11 +180,12 @@ Deno.serve(async (req) => {
     await notify(t.ownerId, `${who} 的收租日（${rentDay}号）已过 ${overdueDays} 天，还没建本期账单，约 ¥${fmtYuan(estimate)}`)
   }
 
-  // ---- 运行留痕：每次跑完记一笔，排查"整点闹钟到底跑没跑"一看便知 ----
+  // ---- 运行留痕：真跑完（到点干活）记一笔，排查"闹钟到底跑没跑"一看便知 ----
   //（表由 migrations/0004_push_log.sql 建立，只有服务密钥能读写）
   try {
     await supa.from('push_log').insert({
       hour,
+      minute,
       sent: results.filter((r) => r.ok).length,
       detail: results,
     })

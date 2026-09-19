@@ -162,25 +162,36 @@ async function disablePush() {
   }
 }
 
-// 提醒时间（存各自档案的 prefs.notifyHour，提醒程序按这个时间发）
+// 提醒时间（存各自档案的 prefs.notifyHour/notifyMinute，提醒程序按这个时间发）
 const showHourPicker = ref(false)
 const notifyHour = computed(() => Number(session.current?.prefs?.notifyHour ?? 9))
+const notifyMinute = computed(() => Number(session.current?.prefs?.notifyMinute ?? 0))
+const fmtTime = (h, m) => `${String(h).padStart(2, '0')}:${String(m ?? 0).padStart(2, '0')}`
 const hourColumns = Array.from({ length: 17 }, (_, i) => {
   const h = i + 6 // 6:00 ~ 22:00
-  const text = h < 11 ? `早上 ${h}:00` : h < 13 ? `中午 ${h}:00` : h < 18 ? `下午 ${h}:00` : `晚上 ${h}:00`
-  return { text, value: h }
+  const period = h < 11 ? '早上' : h < 13 ? '中午' : h < 18 ? '下午' : '晚上'
+  return { text: `${period} ${String(h).padStart(2, '0')}点`, value: h }
 })
-const hourText = computed(() => hourColumns.find((c) => c.value === notifyHour.value)?.text || `${notifyHour.value}:00`)
+const minuteColumns = Array.from({ length: 60 }, (_, m) => ({
+  text: `${String(m).padStart(2, '0')}分`,
+  value: m,
+}))
+// 双列选择器（时+分）；默认定位到当前设置，找不到时兜底第 0 项
+const timeColumns = computed(() => [
+  { values: hourColumns, defaultIndex: Math.max(0, hourColumns.findIndex((c) => c.value === notifyHour.value)) },
+  { values: minuteColumns, defaultIndex: Math.max(0, minuteColumns.findIndex((c) => c.value === notifyMinute.value)) },
+])
+const hourText = computed(() => fmtTime(notifyHour.value, notifyMinute.value))
 
 async function onHourConfirm({ selectedValues }) {
-  const h = selectedValues[0]
+  const [h, m] = selectedValues
   showHourPicker.value = false
   try {
     const l = session.current
-    const prefs = { ...(l.prefs || {}), notifyHour: h }
+    const prefs = { ...(l.prefs || {}), notifyHour: h, notifyMinute: m }
     await repo.saveLandlord({ ...l, prefs })
     l.prefs = prefs
-    showToast(`已设为每天 ${hourColumns.find((c) => c.value === h)?.text || h + ':00'} 提醒`)
+    showToast(`已设为每天 ${fmtTime(h, m)} 提醒`)
   } catch (e) {
     showToast('保存失败，请重试')
   }
@@ -429,12 +440,11 @@ async function signOut() {
       </div>
     </van-popup>
 
-    <!-- 提醒时间选择 -->
+    <!-- 提醒时间选择（时 + 分双列） -->
     <van-popup v-model:show="showHourPicker" position="bottom" round>
       <van-picker
-        title="每天几点提醒"
-        :columns="hourColumns"
-        :default-index="Math.max(0, notifyHour - 6)"
+        title="每天几点几分提醒"
+        :columns="timeColumns"
         @confirm="onHourConfirm"
         @cancel="showHourPicker = false"
       />
