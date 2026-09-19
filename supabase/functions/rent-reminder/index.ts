@@ -73,9 +73,11 @@ Deno.serve(async (req) => {
   // 每位房东自选的提醒小时（prefs.notifyHour，默认 9 点）。
   // 定时任务每小时跑一次，只有"当前小时 == 自己选的时间"的人才收到推送，
   // 这样每个人可以自定义提醒时间，互不干扰。
+  // ?force=1（仅服务密钥可调）跳过时间过滤，用于手动测试推送。
+  const force = new URL(req.url).searchParams.get('force') === '1'
   const matchedOwners = new Set(
     (landlords ?? [])
-      .filter((l) => Number(l.prefs?.notifyHour ?? 9) === hour)
+      .filter((l) => force || Number(l.prefs?.notifyHour ?? 9) === hour)
       .map((l) => l.id)
   )
   const subsByOwner = new Map()
@@ -151,6 +153,18 @@ Deno.serve(async (req) => {
       (t.water?.mode === 'flat' ? t.water.flatAmount || 0 : 0)
     const who = t.room ? `${t.room}·${t.name}` : t.name
     await notify(t.ownerId, `${who} 的收租日（${rentDay}号）已过 ${overdueDays} 天，还没建本期账单，约 ¥${fmtYuan(estimate)}`)
+  }
+
+  // ---- 运行留痕：每次跑完记一笔，排查"整点闹钟到底跑没跑"一看便知 ----
+  //（表由 migrations/0004_push_log.sql 建立，只有服务密钥能读写）
+  try {
+    await supa.from('push_log').insert({
+      hour,
+      sent: results.filter((r) => r.ok).length,
+      detail: results,
+    })
+  } catch {
+    /* 留痕失败不影响发送 */
   }
 
   return new Response(JSON.stringify({ ok: true, sent: results.length, detail: results }), {

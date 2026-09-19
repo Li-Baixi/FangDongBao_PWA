@@ -1,14 +1,11 @@
 <script setup>
 /**
- * 抄表步骤组件：拍照/从相册选图 + 上次读数 + 本次读数 + OCR 识别。
- * 识别优先级：用户配置了大模型 Key 就用大模型（更准），失败自动降级本地 OCR。
- * 强调：OCR 只做预填，数字必须人工过目确认。
+ * 抄表步骤组件：拍照/从相册选图 + 上次读数 + 本次读数。
+ * 读数直接关系算钱，一律人工看表填写，照片仅作存证。
  */
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { showToast, showLoadingToast } from 'vant'
 import { compressPhoto } from '@/utils/image'
-import { ocrDigits } from '@/utils/ocr'
-import { aiOcrDigits, getAiConfig } from '@/utils/aiocr'
 import { fmtReading } from '@/utils/dates'
 
 const props = defineProps({
@@ -26,7 +23,6 @@ const emit = defineEmits(['update:modelPrev', 'update:modelCur', 'photo'])
 const shotInput = ref(null) // 直接拍照
 const pickInput = ref(null) // 从相册选
 const previewUrl = ref('')
-const ocrHint = ref('')
 
 watch(
   () => props.photoBlob,
@@ -48,48 +44,13 @@ async function onFile(e) {
   try {
     const { blob, thumb } = await compressPhoto(file)
     emit('photo', { blob, thumb })
-    ocrHint.value = ''
     loading.close()
-    showToast('照片已存，可点"自动识别"辅助填数')
+    showToast('照片已存')
   } catch (err) {
     loading.close()
     showToast('照片处理失败，请重拍')
   } finally {
     e.target.value = ''
-  }
-}
-
-async function runOcr() {
-  if (!props.photoBlob) return showToast('先拍一张表的照片')
-  // 优先大模型（用户在「我的 → 识别设置」配置过 Key 时）
-  const cfg = await getAiConfig()
-  if (cfg) {
-    const loading = showLoadingToast({ message: 'AI 识别中…', forbidClick: true, duration: 0 })
-    try {
-      const digits = await aiOcrDigits(props.photoBlob, props.utility, cfg)
-      loading.close()
-      emit('update:modelCur', digits)
-      ocrHint.value = `AI 识别为 ${digits}，请核对表盘无误后再继续`
-      return
-    } catch (e) {
-      loading.close()
-      showToast(`大模型识别失败（${(e.message || '').slice(0, 60)}），改用本地识别`)
-    }
-  }
-  // 本地 OCR（免费、离线）
-  const loading = showLoadingToast({ message: '本地识别中…可能要几秒', forbidClick: true, duration: 0 })
-  try {
-    const digits = await ocrDigits(props.photoBlob)
-    loading.close()
-    if (digits) {
-      emit('update:modelCur', digits)
-      ocrHint.value = `识别为 ${digits}，请核对表盘无误后再继续`
-    } else {
-      showToast('没认出来，请手动输入读数')
-    }
-  } catch (e) {
-    loading.close()
-    showToast('识别组件加载失败，请手动输入读数')
   }
 }
 </script>
@@ -113,9 +74,7 @@ async function runOcr() {
     <div class="meter__btns">
       <van-button size="small" plain round icon="photograph" @click="shotInput && shotInput.click()">重拍</van-button>
       <van-button size="small" plain round icon="photo-o" @click="pickInput && pickInput.click()">相册</van-button>
-      <van-button size="small" plain round type="primary" icon="scan" @click="runOcr">自动识别</van-button>
     </div>
-    <div v-if="ocrHint" class="meter__ocr-hint">🤖 {{ ocrHint }}</div>
 
     <!-- 读数 -->
     <div class="meter__fields">
@@ -191,11 +150,6 @@ async function runOcr() {
   display: flex;
   gap: 10px;
   margin-top: 10px;
-}
-.meter__ocr-hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--fdb-primary);
 }
 .meter__fields {
   display: flex;

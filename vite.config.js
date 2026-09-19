@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
-import { viteStaticCopy } from 'vite-plugin-static-copy'
 import { RELEASE_NOTES } from './src/release-notes.js'
 
 // GitHub Pages 部署在 https://li-baixi.github.io/FangDongBao_PWA/ 子路径下
@@ -42,21 +41,6 @@ export default defineConfig({
   plugins: [
     versionJsonPlugin(),
     vue(),
-    // 把 tesseract.js 的离线识别资源复制到 dist/ocr/（自托管，不依赖 CDN）
-    viteStaticCopy({
-      targets: [
-        {
-          src: 'node_modules/tesseract.js/dist/worker.min.js',
-          dest: 'ocr',
-          rename: { name: 'worker.min.js', stripBase: true },
-        },
-        {
-          src: 'node_modules/tesseract.js-core/*',
-          dest: 'ocr/core',
-          rename: { stripBase: true },
-        },
-      ],
-    }),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
@@ -81,8 +65,6 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        // 排除 OCR 大文件（wasm/字库约 10MB+），它们走运行时缓存：用过一次后离线可用
-        globIgnores: ['ocr/**'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: { enabled: false },
