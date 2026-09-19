@@ -176,15 +176,19 @@ const minuteColumns = Array.from({ length: 60 }, (_, m) => ({
   text: `${String(m).padStart(2, '0')}分`,
   value: m,
 }))
-// 双列选择器（时+分）；默认定位到当前设置，找不到时兜底第 0 项
-const timeColumns = computed(() => [
-  { values: hourColumns, defaultIndex: Math.max(0, hourColumns.findIndex((c) => c.value === notifyHour.value)) },
-  { values: minuteColumns, defaultIndex: Math.max(0, minuteColumns.findIndex((c) => c.value === notifyMinute.value)) },
-])
+// 双列选择器（时+分）：Vant 4 多列格式是"数组的数组"，
+// :model-value 让滚轮默认停在当前设置上
+const timeColumns = computed(() => [hourColumns, minuteColumns])
+const timeValue = computed(() => [notifyHour.value, notifyMinute.value])
 const hourText = computed(() => fmtTime(notifyHour.value, notifyMinute.value))
 
 async function onHourConfirm({ selectedValues }) {
-  const [h, m] = selectedValues
+  const h = Number(selectedValues[0])
+  const m = Number(selectedValues[1] ?? 0)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) {
+    showToast('选择异常，请重新选一次')
+    return
+  }
   showHourPicker.value = false
   try {
     const l = session.current
@@ -445,6 +449,7 @@ async function signOut() {
       <van-picker
         title="每天几点几分提醒"
         :columns="timeColumns"
+        :model-value="timeValue"
         @confirm="onHourConfirm"
         @cancel="showHourPicker = false"
       />
