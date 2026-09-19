@@ -262,7 +262,7 @@ function exportCsv() {
   a.download = `房东宝_${year.value}年账单.csv`
   a.click()
   URL.revokeObjectURL(a.href)
-  showToast('已导出 CSV（在下载里找）')
+  showToast('表格已导出（在"下载"里找，可用 Excel 打开）')
 }
 </script>
 
@@ -325,7 +325,7 @@ function exportCsv() {
     <div class="fdb-card">
       <div class="fdb-card-title">
         <span>全年账单明细（{{ billRows.length }} 期）</span>
-        <a class="stats__export" @click="exportCsv">导出 CSV</a>
+        <a class="stats__export" @click="exportCsv">导出表格</a>
       </div>
       <div class="stats__table-wrap">
         <table class="stats__table">
