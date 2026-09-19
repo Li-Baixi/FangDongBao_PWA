@@ -1,7 +1,7 @@
 <script setup>
 /**
- * 年度统计：KPI + 月度实收柱状图 + 科目构成堆积图 + 楼栋汇总表 + CSV 导出。
- * 图表配色采用无障碍验证过的调色板（CVD 安全）。
+ * 统计：按月/按季度/按年三种范围——KPI + 实收柱状图（按月视图看每日）+
+ * 科目构成堆积图 + 楼栋汇总表 + 明细导出。配色为无障碍验证过的调色板（CVD 安全）。
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { showToast } from 'vant'
@@ -26,7 +26,17 @@ const GRID_LINE = '#e1e0d9'
 const session = useSessionStore()
 const data = useDataStore()
 
+// ===== 统计范围：按月 / 按季度 / 按年 =====
+const PTYPES = [
+  { value: 'month', label: '按月' },
+  { value: 'quarter', label: '按季度' },
+  { value: 'year', label: '按年' },
+]
+const ptype = ref('year')
 const year = ref(Number(dayjs().format('YYYY')))
+const quarter = ref(Math.floor(dayjs().month() / 3) + 1)
+const month = ref(dayjs().month() + 1)
+
 const yearOptions = computed(() => {
   const ys = []
   for (const b of data.bills) {
@@ -37,47 +47,95 @@ const yearOptions = computed(() => {
   if (!ys.includes(cur)) ys.push(cur)
   return ys.sort((a, b) => b - a).map((y) => ({ text: `${y} 年`, value: y }))
 })
-const showYearPicker = ref(false)
+const quarterOptions = [1, 2, 3, 4].map((q) => ({ text: `${'一二三四'[q - 1]}季度`, value: q }))
+const monthOptions = Array.from({ length: 12 }, (_, i) => ({ text: `${i + 1}月`, value: i + 1 }))
+
+const showRangePicker = ref(false)
+// 多列选择器（数组的数组）：按范围类型给 1~2 列
+const rangeColumns = computed(() => {
+  if (ptype.value === 'quarter') return [yearOptions.value, quarterOptions]
+  if (ptype.value === 'month') return [yearOptions.value, monthOptions]
+  return [yearOptions.value]
+})
+const rangeValue = computed(() => {
+  if (ptype.value === 'quarter') return [year.value, quarter.value]
+  if (ptype.value === 'month') return [year.value, month.value]
+  return [year.value]
+})
+function onRangeConfirm({ selectedValues }) {
+  year.value = Number(selectedValues[0])
+  if (ptype.value === 'quarter') quarter.value = Number(selectedValues[1])
+  if (ptype.value === 'month') month.value = Number(selectedValues[1])
+  showRangePicker.value = false
+}
+
+// 所选时间段覆盖的月份（1~12），所有统计都从它推导
+const unitMonths = computed(() => {
+  if (ptype.value === 'year') return Array.from({ length: 12 }, (_, i) => i + 1)
+  if (ptype.value === 'quarter') return [(quarter.value - 1) * 3 + 1, (quarter.value - 1) * 3 + 2, quarter.value * 3]
+  return [month.value]
+})
+const unitPrefixes = computed(() => unitMonths.value.map((m) => `${year.value}-${String(m).padStart(2, '0')}`))
+const inUnitPeriod = (p) => unitPrefixes.value.includes(String(p))
+const inUnitDate = (d) => unitPrefixes.value.some((p) => String(d).startsWith(p))
+const unitLabel = computed(() => {
+  if (ptype.value === 'quarter') return `${year.value} 年 ${'一二三四'[quarter.value - 1]}季度`
+  if (ptype.value === 'month') return `${year.value} 年 ${month.value} 月`
+  return `${year.value} 年`
+})
+// 导出文件名用（不带空格）
+const unitFileTag = computed(() => {
+  if (ptype.value === 'quarter') return `${year.value}年${quarter.value}季度`
+  if (ptype.value === 'month') return `${year.value}年${month.value}月`
+  return `${year.value}年`
+})
 
 // ===== 数据推导 =====
 const scopedBills = computed(() => data.bills.filter((b) => inScope(b, session)))
 
 const kpi = computed(() => {
-  const y = String(year.value)
   let receivable = 0
   let overdueCount = 0
   for (const b of scopedBills.value) {
-    if (!String(b.period).startsWith(y)) continue
+    if (!inUnitPeriod(b.period)) continue
     receivable += b.total || 0
   }
   let received = 0
   for (const p of data.payments) {
-    if (!String(p.paidDate).startsWith(y)) continue
+    if (!inUnitDate(p.paidDate)) continue
     const bill = data.bills.find((b) => b.id === p.billId)
     if (bill && inScope(bill, session)) received += p.amount || 0
   }
   const t = dayjs().format('YYYY-MM-DD')
   for (const b of scopedBills.value) {
-    if (!String(b.period).startsWith(y)) continue
+    if (!inUnitPeriod(b.period)) continue
     if (billView(b, data.paidByBill, t).status === 'overdue') overdueCount++
   }
   const rate = receivable > 0 ? Math.round((received / receivable) * 100) : null
   return { receivable, received, rate, overdueCount }
 })
 
-// 月度实收（按收款日期）
-const monthlyReceived = computed(() => {
-  const y = String(year.value)
-  const arr = new Array(12).fill(0)
-  for (const p of data.payments) {
-    if (!String(p.paidDate).startsWith(y)) continue
-    const bill = data.bills.find((b) => b.id === p.billId)
-    if (bill && inScope(bill, session)) {
-      const m = Number(String(p.paidDate).slice(5, 7)) - 1
-      arr[m] += p.amount || 0
+// 实收柱状图（按收款日期）：按年/季度看各月，按月看每天
+const barData = computed(() => {
+  if (ptype.value === 'month') {
+    const ym = `${year.value}-${String(month.value).padStart(2, '0')}`
+    const days = dayjs(`${ym}-01`).daysInMonth()
+    const values = new Array(days).fill(0)
+    for (const p of data.payments) {
+      const ds = String(p.paidDate)
+      if (!ds.startsWith(ym)) continue
+      const bill = data.bills.find((b) => b.id === p.billId)
+      if (bill && inScope(bill, session)) values[Number(ds.slice(8, 10)) - 1] += p.amount || 0
     }
+    return { labels: values.map((_, i) => `${i + 1}日`), values }
   }
-  return arr
+  const values = unitMonths.value.map(() => 0)
+  for (const p of data.payments) {
+    if (!inUnitDate(p.paidDate)) continue
+    const bill = data.bills.find((b) => b.id === p.billId)
+    if (bill && inScope(bill, session)) values[unitPrefixes.value.indexOf(String(p.paidDate).slice(0, 7))] += p.amount || 0
+  }
+  return { labels: unitMonths.value.map((m) => `${m}月`), values }
 })
 
 // 月度科目构成（按账单期号；杂费/减免归"杂费"）
@@ -88,26 +146,27 @@ const CATS = [
   { key: 'internet', name: '网费', color: C.internet },
   { key: 'misc', name: '杂费/减免', color: C.misc },
 ]
-const monthlyByCat = computed(() => {
-  const y = String(year.value)
-  const series = Object.fromEntries(CATS.map((c) => [c.key, new Array(12).fill(0)]))
+// 科目构成堆积图（按账单期号归到各月；按月视图就是当月一根柱）
+const stackData = computed(() => {
+  const labels = ptype.value === 'month' ? [`${month.value}月`] : unitMonths.value.map((m) => `${m}月`)
+  const series = Object.fromEntries(CATS.map((c) => [c.key, labels.map(() => 0)]))
   for (const b of scopedBills.value) {
-    if (!String(b.period).startsWith(y)) continue
-    const m = Number(String(b.period).slice(5, 7)) - 1
+    if (!inUnitPeriod(b.period)) continue
+    const idx = ptype.value === 'month' ? 0 : unitPrefixes.value.indexOf(String(b.period))
+    if (idx < 0) continue
     for (const item of b.items || []) {
       const key = CATS.some((c) => c.key === item.type) ? item.type : 'misc'
-      series[key][m] += item.amount || 0
+      series[key][idx] += item.amount || 0
     }
   }
-  return series
+  return { labels, series }
 })
 
 // 楼栋汇总
 const byBuilding = computed(() => {
-  const y = String(year.value)
   const map = new Map()
   for (const b of scopedBills.value) {
-    if (!String(b.period).startsWith(y)) continue
+    if (!inUnitPeriod(b.period)) continue
     const t = data.tenantsById[b.tenantId]
     const bName = data.buildingsById[t?.buildingId]?.name || '未分组'
     if (!map.has(bName)) map.set(bName, { bills: 0, receivable: 0 })
@@ -122,10 +181,9 @@ const byBuilding = computed(() => {
 
 // 年度账单明细表（同时满足图表的"表格视图"无障碍要求）
 const billRows = computed(() => {
-  const y = String(year.value)
   const t = dayjs().format('YYYY-MM-DD')
   return scopedBills.value
-    .filter((b) => String(b.period).startsWith(y))
+    .filter((b) => inUnitPeriod(b.period))
     .map((b) => {
       const v = billView(b, data.paidByBill, t)
       const tn = data.tenantsById[b.tenantId]
@@ -143,8 +201,6 @@ const barEl = ref(null)
 const stackEl = ref(null)
 let barChart = null
 let stackChart = null
-
-const MONTH_LABELS = Array.from({ length: 12 }, (_, i) => `${i + 1}月`)
 
 function renderCharts() {
   if (!barEl.value || !stackEl.value) return
@@ -164,7 +220,7 @@ function renderCharts() {
     },
     xAxis: {
       type: 'category',
-      data: MONTH_LABELS,
+      data: barData.value.labels,
       axisLabel: { color: INK_MUTED, fontSize: 10 },
       axisLine: { lineStyle: { color: GRID_LINE } },
       axisTick: { show: false },
@@ -178,7 +234,7 @@ function renderCharts() {
       {
         name: '实收',
         type: 'bar',
-        data: monthlyReceived.value,
+        data: barData.value.values,
         barWidth: '46%',
         itemStyle: { color: C.rent, borderRadius: [4, 4, 0, 0] },
       },
@@ -206,7 +262,7 @@ function renderCharts() {
     },
     xAxis: {
       type: 'category',
-      data: MONTH_LABELS,
+      data: stackData.value.labels,
       axisLabel: { color: INK_MUTED, fontSize: 10 },
       axisLine: { lineStyle: { color: GRID_LINE } },
       axisTick: { show: false },
@@ -220,7 +276,7 @@ function renderCharts() {
       name: c.name,
       type: 'bar',
       stack: 'total',
-      data: monthlyByCat.value[c.key],
+      data: stackData.value.series[c.key],
       barWidth: '46%',
       itemStyle: {
         color: c.color,
@@ -232,7 +288,7 @@ function renderCharts() {
   })
 }
 
-watch([year, () => data.bills, () => data.payments], () => nextTick(renderCharts), { deep: false })
+watch([ptype, year, quarter, month, () => data.bills, () => data.payments], () => nextTick(renderCharts), { deep: false })
 
 onMounted(() => nextTick(renderCharts))
 onBeforeUnmount(() => {
@@ -259,7 +315,7 @@ function exportCsv() {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `房东宝_${year.value}年账单.csv`
+  a.download = `房东宝_${unitFileTag.value}账单.csv`
   a.click()
   URL.revokeObjectURL(a.href)
   showToast('表格已导出（在"下载"里找，可用 Excel 打开）')
@@ -270,7 +326,7 @@ function exportCsv() {
   <div class="fdb-page stats">
     <van-nav-bar title="统计">
       <template #right>
-        <span class="stats__year" @click="showYearPicker = true">{{ year }} 年 ▾</span>
+        <span class="stats__year" @click="showRangePicker = true">{{ unitLabel }} ▾</span>
       </template>
     </van-nav-bar>
 
@@ -279,11 +335,11 @@ function exportCsv() {
       <div class="stats__kpi">
         <div class="stats__kpi-item">
           <div class="stats__kpi-num">{{ formatFen(kpi.receivable, { comma: true }) }}</div>
-          <div class="stats__kpi-label">全年应收（元）</div>
+          <div class="stats__kpi-label">本期应收（元）</div>
         </div>
         <div class="stats__kpi-item">
           <div class="stats__kpi-num stats__kpi-num--good">{{ formatFen(kpi.received, { comma: true }) }}</div>
-          <div class="stats__kpi-label">全年实收（元）</div>
+          <div class="stats__kpi-label">本期实收（元）</div>
         </div>
         <div class="stats__kpi-item">
           <div class="stats__kpi-num">{{ kpi.rate == null ? '—' : kpi.rate + '%' }}</div>
@@ -294,18 +350,20 @@ function exportCsv() {
           <div class="stats__kpi-label">逾期未清（笔）</div>
         </div>
       </div>
-      <div class="stats__kpi-note">实收按当年收款日期合计；应收按当年各期账单合计。</div>
+      <div class="stats__kpi-note">实收按所选时间内收款日期合计；应收按该时间各期账单合计。</div>
     </div>
 
-    <!-- 月度实收 -->
+    <!-- 实收柱状图 -->
     <div class="fdb-card">
-      <div class="fdb-card-title"><span>月度实收</span></div>
+      <div class="fdb-card-title">
+        <span>{{ ptype === 'month' ? '每日实收' : ptype === 'quarter' ? '季度各月实收' : '月度实收' }}</span>
+      </div>
       <div ref="barEl" class="stats__chart"></div>
     </div>
 
     <!-- 科目构成 -->
     <div class="fdb-card">
-      <div class="fdb-card-title"><span>各月应收构成</span></div>
+      <div class="fdb-card-title"><span>{{ ptype === 'month' ? '本月应收构成' : '各月应收构成' }}</span></div>
       <div ref="stackEl" class="stats__chart"></div>
     </div>
 
@@ -324,7 +382,7 @@ function exportCsv() {
     <!-- 明细表 -->
     <div class="fdb-card">
       <div class="fdb-card-title">
-        <span>全年账单明细（{{ billRows.length }} 期）</span>
+        <span>{{ unitLabel }}账单明细（{{ billRows.length }} 期）</span>
         <a class="stats__export" @click="exportCsv">导出表格</a>
       </div>
       <div class="stats__table-wrap">
@@ -344,12 +402,29 @@ function exportCsv() {
           </tbody>
         </table>
       </div>
-      <div v-if="!billRows.length" class="fdb-empty">这一年还没有账单</div>
+      <div v-if="!billRows.length" class="fdb-empty">该时间段还没有账单</div>
     </div>
     <div style="height: 24px"></div>
 
-    <van-popup :show="showYearPicker" position="bottom" round @close="showYearPicker = false">
-      <van-picker title="选择年份" :columns="yearOptions" @confirm="(e) => { year = e.selectedValues[0]; showYearPicker = false }" @cancel="showYearPicker = false" />
+    <!-- 统计范围选择：类型 + 时间 -->
+    <van-popup :show="showRangePicker" position="bottom" round @close="showRangePicker = false">
+      <div class="stats__ptype">
+        <button
+          v-for="t in PTYPES"
+          :key="t.value"
+          :class="['stats__ptype-btn', { 'stats__ptype-btn--on': ptype === t.value }]"
+          @click="ptype = t.value"
+        >
+          {{ t.label }}
+        </button>
+      </div>
+      <van-picker
+        title="选择统计范围"
+        :columns="rangeColumns"
+        :model-value="rangeValue"
+        @confirm="onRangeConfirm"
+        @cancel="showRangePicker = false"
+      />
     </van-popup>
   </div>
 </template>
@@ -359,6 +434,25 @@ function exportCsv() {
   font-size: 14px;
   color: var(--fdb-primary);
   cursor: pointer;
+}
+.stats__ptype {
+  display: flex;
+  gap: 8px;
+  padding: 14px 16px 6px;
+}
+.stats__ptype-btn {
+  flex: 1;
+  border: 1px solid var(--fdb-primary);
+  background: #fff;
+  color: var(--fdb-primary);
+  border-radius: 8px;
+  padding: 8px 0;
+  font-size: 14px;
+  cursor: pointer;
+}
+.stats__ptype-btn--on {
+  background: var(--fdb-primary);
+  color: #fff;
 }
 .stats__kpi {
   display: flex;
