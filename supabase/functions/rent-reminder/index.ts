@@ -121,7 +121,8 @@ Deno.serve(async (req) => {
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: s.keys },
-          JSON.stringify({ title: '房东宝 · 收租提醒', body, tag: 'rent-' + body.length })
+          // 标题不再带"房东宝"——手机系统自己会标注来源应用，避免重复
+          JSON.stringify({ title: '收租提醒', body, tag: 'rent-' + body.length })
         )
         results.push({ ok: s.endpoint.slice(0, 40) })
       } catch (err) {
