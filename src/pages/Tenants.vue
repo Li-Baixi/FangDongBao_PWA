@@ -21,6 +21,20 @@ const showLeft = ref(false)
 
 const tStr = today()
 
+// 房号排序：默认升序，点按钮切换；切换只影响本页显示，不动数据
+const roomDesc = ref(false)
+
+/** 房号自然比较（101 < 102 < 2-201，数字按数值比），没填房号的永远排最后 */
+function roomCompare(a, b) {
+  const ra = (a.room || '').trim()
+  const rb = (b.room || '').trim()
+  if (!ra && !rb) return a.name.localeCompare(b.name, 'zh')
+  if (!ra) return 1
+  if (!rb) return -1
+  const c = ra.localeCompare(rb, 'zh-Hans-CN', { numeric: true })
+  return roomDesc.value ? -c : c
+}
+
 const list = computed(() => {
   const kw = search.value.trim()
   return data.tenants
@@ -36,7 +50,7 @@ const groups = computed(() => {
     if (!map.has(bName)) map.set(bName, [])
     map.get(bName).push(t)
   }
-  return Array.from(map.entries()).map(([name, tenants]) => ({ name, tenants }))
+  return Array.from(map.entries()).map(([name, tenants]) => ({ name, tenants: tenants.sort(roomCompare) }))
 })
 
 function debtOf(t) {
@@ -107,6 +121,9 @@ function utilSummary(t) {
     <van-search v-model="search" placeholder="搜索姓名 / 房号 / 电话" />
     <div class="tenants__toggle">
       <van-checkbox v-model="showLeft" shape="square" icon-size="14px">显示已退租</van-checkbox>
+      <div class="tenants__sort" @click="roomDesc = !roomDesc">
+        房号 {{ roomDesc ? '↓ 从高到低' : '↑ 从低到高' }}
+      </div>
     </div>
 
     <div class="fdb-card" v-for="g in groups" :key="g.name">
@@ -155,9 +172,19 @@ function utilSummary(t) {
 
 <style scoped>
 .tenants__toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 0 16px 8px;
   font-size: 12px;
   color: #969799;
+}
+.tenants__sort {
+  color: var(--fdb-primary);
+  background: #f1e9fc;
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
 }
 .tenants__count {
   font-size: 12px;
