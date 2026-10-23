@@ -82,8 +82,9 @@ async function markActive() {
   showToast('已恢复在租')
 }
 
-function goCollect() {
-  router.push({ name: 'collect', params: { tenantId: tenant.value.id } })
+function goCollect(p) {
+  // 从某期账单点「补记/修改」就锁定那一期；顶部「收租」按钮不带期号，默认本期
+  router.push({ name: 'collect', params: { tenantId: tenant.value.id }, query: p ? { period: p } : undefined })
 }
 
 // ===== 证件与合同（默认折叠） =====
@@ -242,7 +243,7 @@ function previewThumb(dataUrl) {
 
           <div class="td__note" v-if="b.note">📝 {{ b.note }}</div>
 
-          <van-button size="small" round plain type="primary" block style="margin-top: 8px" @click="goCollect">
+          <van-button size="small" round plain type="primary" block style="margin-top: 8px" @click="goCollect(b.period)">
             {{ b.status === 'paid' ? '补记 / 修改' : '继续收这期' }}
           </van-button>
         </div>

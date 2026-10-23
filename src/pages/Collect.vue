@@ -29,7 +29,9 @@ const meterQueue = ref([]) // 需要抄表的表种，如 ['electric','water']
 const meterIndex = ref(0)
 
 const tenant = ref(null)
-const period = ref(periodOf())
+// 从租客某期账单「补记/修改」进来时锁定那一期（query.period），否则默认本期
+const qp = typeof route.query.period === 'string' && /^\d{4}-\d{2}$/.test(route.query.period) ? route.query.period : ''
+const period = ref(qp || periodOf())
 const showPeriodPicker = ref(false)
 const showMethodPicker = ref(false)
 const showDatePicker = ref(false)
@@ -569,6 +571,7 @@ onMounted(() => {
       <van-picker
         title="选择收租月份"
         :columns="periodOptions"
+        :model-value="[period]"
         @confirm="(e) => changePeriod(e.selectedValues[0])"
         @cancel="showPeriodPicker = false"
       />
