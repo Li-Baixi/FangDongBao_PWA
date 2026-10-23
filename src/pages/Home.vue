@@ -66,7 +66,8 @@ const monthStat = computed(() => {
     received += v.paid
     count++
   }
-  return { receivable, received, unpaid: receivable - received, count }
+  // 多收/记错时不显示负数，最多显示 0
+  return { receivable, received, unpaid: Math.max(0, receivable - received), count }
 })
 
 // 查看范围切换（管理员）：我的 / 全部 / 各用户

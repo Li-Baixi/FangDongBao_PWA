@@ -231,6 +231,16 @@ export async function deleteBill(id) {
   await softDelete('bills', id)
 }
 
+/**
+ * 整期撤销：账单连同它的收款记录一起作废（软删，照常同步），
+ * 回到"这期还没收"的状态。抄表记录与照片保留，重收时还能带出。
+ */
+export async function revokeBill(billId) {
+  const rows = (await db.payments.toArray()).filter((p) => p.billId === billId && !p.deletedAt)
+  for (const p of rows) await softDelete('payments', p.id)
+  await softDelete('bills', billId)
+}
+
 // ============ 收款记录（支持分次交租） ============
 
 export async function listPayments() {
@@ -332,6 +342,7 @@ const repo = {
   findBill,
   saveBill,
   deleteBill,
+  revokeBill,
   // payments
   listPayments,
   savePayment,

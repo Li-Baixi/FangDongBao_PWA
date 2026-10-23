@@ -19,7 +19,10 @@ export const UTILITY_LABELS = { electric: '电费', water: '水费' }
 export function utilityCharge(cfg, prev, cur) {
   if (!cfg || cfg.mode === 'included') return { amount: 0, usage: 0, mode: 'included' }
   if (cfg.mode === 'flat') return { amount: cfg.flatAmount || 0, usage: 0, mode: 'flat' }
-  const usage = calcUsage(prev ?? 0, cur ?? 0)
+  // 还没抄表（本次读数空着）：这项按 0 元记。
+  // 千万不能拿 0 去减上次读数——那会算出大负数，账单总额变负、错显"已结清"。
+  if (cur === null || cur === undefined || cur === '') return { amount: 0, usage: null, mode: 'metered' }
+  const usage = calcUsage(prev ?? 0, cur)
   return { amount: usageToAmount(usage, cfg.price || 0), usage, mode: 'metered' }
 }
 

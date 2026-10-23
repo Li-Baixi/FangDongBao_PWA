@@ -87,6 +87,30 @@ function goCollect(p) {
   router.push({ name: 'collect', params: { tenantId: tenant.value.id }, query: p ? { period: p } : undefined })
 }
 
+/** 整期撤销：点错了/记乱了，这期账单连同收款一起作废，回到"还没收"（照片保留） */
+async function revokePeriod(b) {
+  const pays = paymentsOf(b.id)
+  const payMsg = pays.length
+    ? `连同这期记过的 ${pays.length} 笔收款（共 ${formatFen(pays.reduce((s, p) => s + p.amount, 0), { comma: true })} 元）一起作废，`
+    : ''
+  try {
+    await showConfirmDialog({
+      title: `撤销 ${b.period} 这期账单？`,
+      message: `这期会回到"还没收"的状态，${payMsg}抄表照片保留。`,
+    })
+  } catch {
+    return
+  }
+  try {
+    await showConfirmDialog({ title: '再确认一次', message: '确定撤销？之后需要重新收一遍这期。' })
+  } catch {
+    return
+  }
+  await repo.revokeBill(b.id)
+  expandBill.value = null
+  showToast(`已撤销 ${b.period} 这期`)
+}
+
 // ===== 证件与合同（默认折叠） =====
 const showDocs = ref(false)
 const docs = computed(() => tenant.value?.docs || [])
@@ -243,9 +267,12 @@ function previewThumb(dataUrl) {
 
           <div class="td__note" v-if="b.note">📝 {{ b.note }}</div>
 
-          <van-button size="small" round plain type="primary" block style="margin-top: 8px" @click="goCollect(b.period)">
-            {{ b.status === 'paid' ? '补记 / 修改' : '继续收这期' }}
-          </van-button>
+          <div class="td__bill-ops">
+            <van-button size="small" round plain type="primary" @click="goCollect(b.period)">
+              {{ b.status === 'paid' ? '补记 / 修改' : '继续收这期' }}
+            </van-button>
+            <van-button size="small" round plain type="danger" @click="revokePeriod(b)">整期撤销</van-button>
+          </div>
         </div>
       </div>
     </div>
@@ -362,6 +389,14 @@ function previewThumb(dataUrl) {
   font-size: 11px;
   color: #ee0a24;
   margin-left: 6px;
+}
+.td__bill-ops {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.td__bill-ops .van-button {
+  flex: 1;
 }
 .td__bill-money {
   display: flex;

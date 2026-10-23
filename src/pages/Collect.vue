@@ -162,6 +162,8 @@ function onPhoto(util, { blob, thumb }) {
 }
 
 function nextMeter() {
+  const m = meters.value[curUtil.value]
+  if (m.cur === '' || m.cur === null) showToast(`${UTIL_NAME[curUtil.value]}没填读数，这项会先按 0 元记账`)
   if (meterIndex.value < meterQueue.value.length - 1) {
     meterIndex.value++
   } else {
@@ -231,11 +233,19 @@ function removeItem(idx) {
 function itemDetailText(item) {
   if (item.detail?.mode === 'metered') {
     const { prev, cur, usage, unitPrice } = item.detail
-    return `${prev ?? '?'} → ${cur ?? '?'}，用量 ${usage} × ${(unitPrice / 100).toFixed(2)} 元`
+    if (cur == null) return `还没抄表（上次读数 ${prev ?? '?'}），这项先按 0 元记`
+    return `${prev ?? '?'} → ${cur}，用量 ${usage} × ${(unitPrice / 100).toFixed(2)} 元`
   }
   if (item.detail?.mode === 'flat') return '包干价'
   return ''
 }
+
+// 没抄表的表种（账单确认页黄条提醒用）
+const unreadMeters = computed(() =>
+  items.value
+    .filter((i) => (i.type === 'electric' || i.type === 'water') && i.detail?.mode === 'metered' && i.detail?.cur == null)
+    .map((i) => i.name)
+)
 
 // ============ 收款 ============
 function enterPay() {
@@ -452,6 +462,10 @@ onMounted(() => {
           <span>{{ tenant.room ? tenant.room + ' · ' : '' }}{{ tenant.name }} · {{ period }}</span>
         </div>
 
+        <div v-if="unreadMeters.length" class="collect__warn">
+          ⚠️ {{ unreadMeters.join('、') }}还没抄表，这项先按 <b>0 元</b> 记。抄完表随时回来（这期的「补记/修改」）补上。
+        </div>
+
         <div class="collect__item" v-for="(item, idx) in items" :key="idx">
           <div class="collect__item-main" @click="startEditItem(item)">
             <div class="collect__item-name">
@@ -652,6 +666,15 @@ onMounted(() => {
   color: #646566;
   margin-bottom: 10px;
   cursor: pointer;
+}
+.collect__warn {
+  background: #fff7e8;
+  color: #ed6a0c;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0 2px;
 }
 .collect__item {
   display: flex;
