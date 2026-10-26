@@ -276,7 +276,9 @@ function renderCharts() {
       name: c.name,
       type: 'bar',
       stack: 'total',
-      data: stackData.value.series[c.key],
+      // 0 记 null：真没有的项不画（也避免 barMinHeight 把 0 顶出假色带）
+      data: stackData.value.series[c.key].map((v) => (v !== 0 ? v : null)),
+      barMinHeight: 7, // 占比再小的段（如水费/网费）也保底留一条看得见的色带
       barWidth: '46%',
       itemStyle: {
         color: c.color,
