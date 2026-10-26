@@ -11,6 +11,7 @@ import { supabase, vapidPublicKey } from '@/db/supabase'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { dataUrlToBlob } from '@/utils/image'
+import { monthDays } from '@/utils/dates'
 import { RELEASE_NOTES } from '@/release-notes.js'
 import { urlBase64ToUint8Array } from '@/utils/push'
 import { uid, nowTs } from '@/utils/id'
@@ -199,6 +200,83 @@ async function onHourConfirm({ selectedValues }) {
   } catch (e) {
     showToast('保存失败，请重试')
   }
+}
+
+// ===== 收租日导出到手机日历 =====
+// 网页无法直接写苹果「提醒事项」，通用做法是生成 .ics 日历文件：
+// 下载后点开 → 日历 App「全部添加」，到点日历会弹提醒。
+const escIcs = (s) => String(s).replace(/([,;\\])/g, '\\$1')
+const pad2 = (n) => String(n).padStart(2, '0')
+
+/** 下一次收租日（收租日按月末钳位，和应用里的规则一致） */
+function nextRentDate(rentDay) {
+  const now = new Date()
+  const clamp = (y, m) => Math.min(rentDay || 1, monthDays(y, m))
+  if (now.getDate() <= clamp(now.getFullYear(), now.getMonth() + 1)) {
+    return new Date(now.getFullYear(), now.getMonth(), clamp(now.getFullYear(), now.getMonth() + 1))
+  }
+  const ny = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear()
+  const nm = (now.getMonth() + 1) % 12
+  return new Date(ny, nm, clamp(ny, nm + 1))
+}
+
+async function exportRentCalendar() {
+  const me = session.current
+  const tenants = data.tenants.filter((t) => t.ownerId === me?.id && t.status === 'active')
+  if (!tenants.length) {
+    showToast('当前账号还没有在租的租客')
+    return
+  }
+  try {
+    await showConfirmDialog({
+      title: '把收租日加到手机日历？',
+      message: `会下载一个日历文件（${tenants.length} 位租客，每人每月一条循环提醒，时间用你设置的 ${hourText.value}）。在 iPhone 上点开下载的文件 →「全部添加」即可。注意：以后收租日有改动、或新增了租客，日历不会自动跟着变，要重新导一次（先删掉日历里旧的再加，避免重复）。`,
+    })
+  } catch {
+    return
+  }
+  const h = notifyHour.value
+  const m = notifyMinute.value
+  const fmt = (d) => `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z'
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//FangDongBao//RentCalendar//CN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ]
+  for (const t of tenants) {
+    const rd = t.rentDay || 1
+    const start = nextRentDate(rd)
+    start.setHours(h, m, 0, 0)
+    const end = new Date(start.getTime() + 30 * 60000)
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:fdb-${t.id}@fangdongbao`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${fmt(start)}`,
+      `DTEND:${fmt(end)}`,
+      // 29 号及以上的收租日放"每月最后一天"（日历的重复规则不支持"月末钳位"写法）
+      `RRULE:FREQ=MONTHLY;BYMONTHDAY=${rd <= 28 ? rd : -1}`,
+      `SUMMARY:${escIcs(`收租：${t.room ? t.room + ' ' : ''}${t.name}`)}`,
+      `DESCRIPTION:${escIcs(`房东宝导出 · 月租 ${((t.monthlyRent || 0) / 100).toFixed(2)} 元 · 每月${rd}号收租`)}`,
+      'BEGIN:VALARM',
+      'TRIGGER:-PT15M',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:该收租了',
+      'END:VALARM',
+      'END:VEVENT',
+    )
+  }
+  lines.push('END:VCALENDAR')
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `房东宝收租日历_${new Date().toISOString().slice(0, 10)}.ics`
+  a.click()
+  URL.revokeObjectURL(a.href)
+  showToast('已生成：点开下载的文件 →「全部添加」')
 }
 
 // 水电费默认单价（存各自档案的 prefs；新增租客时自动预填单价栏）
@@ -444,6 +522,13 @@ async function signOut() {
         <van-cell title="提醒时间" :value="hourText" is-link @click="showHourPicker = true" />
       </template>
       <van-cell v-else title="收租推送提醒" icon="bell" :value="session.isCloud ? '未配置' : '仅云模式'" />
+      <van-cell
+        title="收租日加到手机日历"
+        icon="calendar-o"
+        is-link
+        label="每位租客每月一条循环提醒（下载文件后点开添加）"
+        @click="exportRentCalendar"
+      />
       <van-cell title="怎么装到手机桌面" icon="apps-o" is-link @click="router.push({ name: 'installGuide' })" />
     </van-cell-group>
 
