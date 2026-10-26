@@ -18,6 +18,7 @@ export const useDataStore = defineStore('data', {
     tenants: [],
     bills: [],
     payments: [],
+    expenses: [],
   }),
   getters: {
     buildingsById: (s) => Object.fromEntries(s.buildings.map((b) => [b.id, b])),
@@ -39,18 +40,20 @@ export const useDataStore = defineStore('data', {
     async reload() {
       this.loading = true
       try {
-        const [landlords, buildings, tenants, bills, payments] = await Promise.all([
+        const [landlords, buildings, tenants, bills, payments, expenses] = await Promise.all([
           repo.listLandlords(),
           repo.listBuildings(),
           repo.listTenants(),
           repo.listBills(),
           repo.listPayments(),
+          repo.listExpenses(),
         ])
         this.landlords = landlords
         this.buildings = buildings
         this.tenants = tenants
         this.bills = bills
         this.payments = payments
+        this.expenses = expenses
       } finally {
         this.loading = false
       }

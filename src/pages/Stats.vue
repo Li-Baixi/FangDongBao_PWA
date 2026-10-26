@@ -4,7 +4,7 @@
  * 科目构成堆积图 + 楼栋汇总表 + 明细导出。配色为无障碍验证过的调色板（CVD 安全）。
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { showToast } from 'vant'
+import { showToast, showConfirmDialog } from 'vant'
 import dayjs from 'dayjs'
 import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'
@@ -12,8 +12,9 @@ import { TooltipComponent, GridComponent, LegendComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore, billView, inScope } from '@/stores/data'
+import repo from '@/db/repo'
 import { STATUS_META } from '@/db/billing'
-import { formatFen } from '@/utils/money'
+import { formatFen, yuanToFen } from '@/utils/money'
 
 echarts.use([BarChart, TooltipComponent, GridComponent, LegendComponent, CanvasRenderer])
 
@@ -322,6 +323,79 @@ function exportCsv() {
   URL.revokeObjectURL(a.href)
   showToast('表格已导出（在"下载"里找，可用 Excel 打开）')
 }
+
+// ===== 维护成本（请人打扫、维修、换设施等支出） =====
+const EXP_CATS = [
+  { value: 'clean', label: '打扫卫生' },
+  { value: 'repair', label: '维修' },
+  { value: 'replace', label: '更换设施' },
+  { value: 'other', label: '其他' },
+]
+const expCatLabel = (v) => EXP_CATS.find((c) => c.value === v)?.label || '其他'
+
+const expenseRows = computed(() =>
+  data.expenses
+    .filter((e) => inScope(e, session) && inUnitDate(e.date))
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+)
+const expenseTotal = computed(() => expenseRows.value.reduce((s, e) => s + (e.amount || 0), 0))
+// 净收入 = 实收 − 维护支出，让"到手的钱"一眼可见
+const netIncome = computed(() => kpi.value.received - expenseTotal.value)
+
+const showExpense = ref(false)
+const showExpDate = ref(false)
+const showExpBuilding = ref(false)
+const expForm = ref({ id: null, date: '', category: 'clean', amountYuan: '', note: '', buildingId: '' })
+
+function openExpense(e = null) {
+  expForm.value = e
+    ? { id: e.id, date: e.date, category: e.category || 'other', amountYuan: (e.amount / 100).toFixed(2), note: e.note || '', buildingId: e.buildingId || '' }
+    : { id: null, date: dayjs().format('YYYY-MM-DD'), category: 'clean', amountYuan: '', note: '', buildingId: '' }
+  showExpense.value = true
+}
+
+// 关联楼栋（选填）：不关联 + 当前范围内的楼栋
+const expBuildingOptions = computed(() => [
+  { text: '不关联', value: '' },
+  ...data.buildings.filter((b) => inScope(b, session)).map((b) => ({ text: b.name, value: b.id })),
+])
+const expBuildingText = computed(
+  () => expForm.value.buildingId ? data.buildingsById[expForm.value.buildingId]?.name || '不关联' : '不关联'
+)
+
+async function saveExpense() {
+  const amount = yuanToFen(expForm.value.amountYuan)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    showToast('填一下金额')
+    return
+  }
+  // 管理员正在看某位用户的数据时，记到那位用户名下；其余记自己
+  const ownerId = session.viewing === 'self' || session.viewing === 'all' ? session.current?.id : session.viewing
+  await repo.saveExpense({
+    id: expForm.value.id || undefined,
+    ownerId,
+    date: expForm.value.date,
+    category: expForm.value.category,
+    amount,
+    note: expForm.value.note.trim() || null,
+    buildingId: expForm.value.buildingId || null,
+  })
+  showExpense.value = false
+  showToast(expForm.value.id ? '已改好' : '已记上')
+}
+
+async function removeExpense(e) {
+  try {
+    await showConfirmDialog({
+      title: '删除这笔支出？',
+      message: `${e.date} · ${expCatLabel(e.category)} ${formatFen(e.amount)} 元`,
+    })
+  } catch {
+    return
+  }
+  await repo.deleteExpense(e.id)
+  showToast('已删除')
+}
 </script>
 
 <template>
@@ -381,6 +455,30 @@ function exportCsv() {
       </div>
     </div>
 
+    <!-- 维护成本 -->
+    <div class="fdb-card">
+      <div class="fdb-card-title">
+        <span>维护成本（{{ expenseRows.length }} 笔）</span>
+        <a class="stats__export" @click="openExpense()">记一笔支出</a>
+      </div>
+      <div class="stats__exp-sum">
+        本期支出 <b class="fdb-money fdb-money--danger">{{ formatFen(expenseTotal, { comma: true }) }}</b> 元
+        <span class="stats__exp-net">净收入（实收−支出）<b :style="{ color: netIncome >= 0 ? '#07c160' : '#ee0a24' }">{{ formatFen(netIncome, { comma: true }) }}</b> 元</span>
+      </div>
+      <div class="stats__exp-row" v-for="e in expenseRows" :key="e.id" @click="openExpense(e)">
+        <div class="stats__exp-main">
+          <span class="stats__exp-cat-tag">{{ expCatLabel(e.category) }}</span>
+          <span class="stats__exp-note">{{ e.note || (e.buildingId && data.buildingsById[e.buildingId]?.name) || '' }}</span>
+        </div>
+        <div class="stats__exp-side">
+          <span class="stats__exp-date">{{ e.date }}</span>
+          <b class="fdb-money fdb-money--danger">-{{ formatFen(e.amount) }}</b>
+          <van-icon name="delete-o" color="#ee0a24" @click.stop="removeExpense(e)" />
+        </div>
+      </div>
+      <div v-if="!expenseRows.length" class="fdb-empty">这段时间还没记支出（请人打扫、维修、换设施都记这里）</div>
+    </div>
+
     <!-- 明细表 -->
     <div class="fdb-card">
       <div class="fdb-card-title">
@@ -428,6 +526,54 @@ function exportCsv() {
         @cancel="showRangePicker = false"
       />
     </van-popup>
+
+    <!-- 记一笔支出（维护成本） -->
+    <van-popup :show="showExpense" position="bottom" round @close="showExpense = false">
+      <div class="stats__exp-form">
+        <div class="fdb-card-title" style="padding: 0 0 4px">
+          <span>{{ expForm.id ? '改这笔支出' : '记一笔支出' }}</span>
+        </div>
+        <van-field :model-value="expForm.date" is-link readonly label="日期" @click="showExpDate = true" />
+        <div class="stats__exp-cats">
+          <span
+            v-for="c in EXP_CATS"
+            :key="c.value"
+            :class="['stats__exp-cat', { 'stats__exp-cat--on': expForm.category === c.value }]"
+            @click="expForm.category = c.value"
+          >
+            {{ c.label }}
+          </span>
+        </div>
+        <van-field v-model="expForm.amountYuan" type="number" label="金额" placeholder="花了多少钱">
+          <template #right-icon>元</template>
+        </van-field>
+        <van-field v-model="expForm.note" label="说明" placeholder="选填（如：通下水道、换热水器）" />
+        <van-field :model-value="expBuildingText" is-link readonly label="关联楼栋" @click="showExpBuilding = true" />
+        <div class="stats__exp-btns">
+          <van-button block round plain @click="showExpense = false">取消</van-button>
+          <van-button block round type="primary" @click="saveExpense">保存</van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- 支出日期 -->
+    <van-calendar
+      :show="showExpDate"
+      :min-date="new Date(Date.now() - 3 * 365 * 86400000)"
+      :max-date="new Date()"
+      @confirm="(d) => { expForm.date = dayjs(d).format('YYYY-MM-DD'); showExpDate = false }"
+      @close="showExpDate = false"
+    />
+
+    <!-- 支出关联楼栋 -->
+    <van-popup :show="showExpBuilding" position="bottom" round @close="showExpBuilding = false">
+      <van-picker
+        title="关联楼栋（选填）"
+        :columns="expBuildingOptions"
+        @confirm="(e) => { expForm.buildingId = e.selectedValues[0] || ''; showExpBuilding = false }"
+        @cancel="showExpBuilding = false"
+      />
+    </van-popup>
   </div>
 </template>
 
@@ -436,6 +582,91 @@ function exportCsv() {
   font-size: 14px;
   color: var(--fdb-primary);
   cursor: pointer;
+}
+.stats__exp-sum {
+  font-size: 13px;
+  color: #646566;
+  background: #f7f8fa;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stats__exp-net {
+  font-size: 12px;
+  color: #969799;
+}
+.stats__exp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f5f6f7;
+  cursor: pointer;
+}
+.stats__exp-row:last-child {
+  border-bottom: none;
+}
+.stats__exp-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.stats__exp-cat-tag {
+  font-size: 11px;
+  color: var(--fdb-primary);
+  background: #f1e9fc;
+  border-radius: 4px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+.stats__exp-note {
+  font-size: 13px;
+  color: #323233;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats__exp-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.stats__exp-date {
+  font-size: 11px;
+  color: #969799;
+}
+.stats__exp-form {
+  padding: 16px 16px 16px;
+}
+.stats__exp-cats {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  flex-wrap: wrap;
+}
+.stats__exp-cat {
+  font-size: 13px;
+  color: var(--fdb-primary);
+  border: 1px solid var(--fdb-primary);
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+.stats__exp-cat--on {
+  background: var(--fdb-primary);
+  color: #fff;
+}
+.stats__exp-btns {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
 }
 .stats__ptype {
   display: flex;

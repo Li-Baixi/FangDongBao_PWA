@@ -17,7 +17,7 @@ export const supabase = cloudEnabled
   : null
 
 /** 参与云同步的表（photos/outbox/meta 只在本地） */
-export const SYNC_TABLES = ['landlords', 'buildings', 'tenants', 'meterReadings', 'bills', 'payments']
+export const SYNC_TABLES = ['landlords', 'buildings', 'tenants', 'meterReadings', 'bills', 'payments', 'expenses']
 
 /** Web Push 的 VAPID 公钥（服务端持有私钥），未配置则推送按钮隐藏 */
 // VAPID 公钥本身就是要发给每个浏览器端公开使用的信息（等同网址），写死默认值，

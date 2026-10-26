@@ -262,6 +262,27 @@ export async function deletePayment(id) {
   await softDelete('payments', id)
 }
 
+// ============ 支出记录（维护成本：打扫/维修/换设施等） ============
+
+export async function listExpenses() {
+  const rows = await db.expenses.toArray()
+  return rows.filter((r) => !r.deletedAt).sort((a, b) => (a.date > b.date ? -1 : 1))
+}
+
+export async function saveExpense(data) {
+  const existing = data.id ? await db.expenses.get(data.id) : null
+  return persist('expenses', {
+    ...existing,
+    ...data,
+    id: data.id || uid(),
+    createdAt: existing?.createdAt || nowTs(),
+  })
+}
+
+export async function deleteExpense(id) {
+  await softDelete('expenses', id)
+}
+
 // ============ 拍照（只存本地） ============
 
 export async function savePhoto(data) {
@@ -347,6 +368,10 @@ const repo = {
   listPayments,
   savePayment,
   deletePayment,
+  // expenses（维护成本）
+  listExpenses,
+  saveExpense,
+  deleteExpense,
   // photos
   savePhoto,
   getPhoto,

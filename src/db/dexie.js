@@ -24,6 +24,11 @@ db.version(2).stores({
   familyGroups: 'id, updatedAt',
 })
 
+// v3：支出记录（维护成本：打扫/维修/换设施等），统计页登记与合计
+db.version(3).stores({
+  expenses: 'id, ownerId, date, updatedAt',
+})
+
 export async function getMeta(key, def = null) {
   const row = await db.meta.get(key)
   return row ? row.value : def
